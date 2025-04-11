@@ -58,6 +58,12 @@ model = models.GraphModel.from_layers(
 
 pred = model(graph)
 print(pred)
+
+# featurizers.save_featurizer(featurizer, '/tmp/featurizer.json')
+# models.save_model(model, '/tmp/model.keras')
+
+# featurizers.load_featurizer('/tmp/featurizer.json')
+# models.load_model('/tmp/model.keras')
 ```
 
 ## Installation
