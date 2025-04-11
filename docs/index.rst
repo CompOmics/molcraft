@@ -51,4 +51,7 @@ with GPU support:
   :maxdepth: 1
   :caption: Tutorials
 
-  tutorials/*
+  tutorials/featurizer_tutorial
+  tutorials/model_tutorial
+  tutorials/complete_tutorial
+

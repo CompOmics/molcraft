@@ -1,11 +1,11 @@
-Part I: Featurizers
+Part 1: Featurizers
 ====================
 
 A featurizer simply converts a SMILES or InChI encoding of a molecule to a molecular graph. 
 
 There are three submodules to consider for featurization: `features`, `descriptors` and `featurizers`.
 
-1. Features (**features.py**)
+1.1 - Features (**features.py**)
 --------------------------------------
 
 A feature computes some specific feature of a molecule, typically an atom or a bond feature.
@@ -14,7 +14,7 @@ Adding `features.AtomType` to the list of features (see below) results in node f
 information about the type of atom. The more features, the more information the graph
 neural network model can work with.
 
-2. Descriptors (**descriptors.py**)
+1.2 - Descriptors (**descriptors.py**)
 --------------------------------------
 A descriptor is similar to a feature, but instead of computing an atom or a bond feature,
 it computes a molecule feature. For instance, `descriptors.MolTPSA` encodes total polar
@@ -22,7 +22,7 @@ surface are of the molecule. Adding descriptors such as `descriptors.MolTPSA` to
 list of descriptors (see below) results in context features encoding useful information about the 
 molecule. This information can later be embedded in the molecular graph via `layers.NodeEmbedding`.
 
-3. Featurizers (**featurizers.py**)
+1.3 - Featurizers (**featurizers.py**)
 --------------------------------------
 As mentioned, featurizers convert SMILES or InChI encodings of a molecule to a molecular graph.
 This graph, encoded as a `GraphTensor`, can then be passed to any `layers.GraphLayer` or 
@@ -32,10 +32,10 @@ Below is an example of how to construct a `featurizers.MolGraphFeaturizer` to ge
 and then subsequently embed that molecular graph. 
 
 .. code:: python
-
-    from molcraft import featurizers 
+    
     from molcraft import features
     from molcraft import descriptors
+    from molcraft import featurizers 
     from molcraft import layers
 
     featurizer = featurizers.MolGraphFeaturizer(
@@ -49,14 +49,14 @@ and then subsequently embed that molecular graph.
             features.IsRotatable(),
         ],
         descriptors=[
-            molcraft.descriptors.MolWeight(),
-            molcraft.descriptors.MolTPSA(),
-            molcraft.descriptors.MolLogP(),
-            molcraft.descriptors.NumHeavyAtoms(),
-            molcraft.descriptors.NumHydrogenDonors(),
-            molcraft.descriptors.NumHydrogenAcceptors(),
-            molcraft.descriptors.NumRotatableBonds(),
-            molcraft.descriptors.NumRings(),
+            descriptors.MolWeight(),
+            descriptors.MolTPSA(),
+            descriptors.MolLogP(),
+            descriptors.NumHeavyAtoms(),
+            descriptors.NumHydrogenDonors(),
+            descriptors.NumHydrogenAcceptors(),
+            descriptors.NumRotatableBonds(),
+            descriptors.NumRings(),
         ],
         super_atom=True,
         self_loops=False,
@@ -79,11 +79,7 @@ Furthermore, for 3D molecular graphs, a `featurizers.MolGraphFeaturizer3D` is al
 
 .. code:: python
 
-    from molcraft import featurizers 
-    from molcraft import features
-    from molcraft import descriptors
     from molcraft import conformers
-    from molcraft import layers
 
     featurizer = featurizers.MolGraphFeaturizer3D(
         atom_features=[
@@ -92,14 +88,14 @@ Furthermore, for 3D molecular graphs, a `featurizers.MolGraphFeaturizer3D` is al
             features.Degree(),
         ],
         descriptors=[
-            molcraft.descriptors.MolWeight(),
-            molcraft.descriptors.MolTPSA(),
-            molcraft.descriptors.MolLogP(),
-            molcraft.descriptors.NumHeavyAtoms(),
-            molcraft.descriptors.NumHydrogenDonors(),
-            molcraft.descriptors.NumHydrogenAcceptors(),
-            molcraft.descriptors.NumRotatableBonds(),
-            molcraft.descriptors.NumRings(),
+            descriptors.MolWeight(),
+            descriptors.MolTPSA(),
+            descriptors.MolLogP(),
+            descriptors.NumHeavyAtoms(),
+            descriptors.NumHydrogenDonors(),
+            descriptors.NumHydrogenAcceptors(),
+            descriptors.NumRotatableBonds(),
+            descriptors.NumRings(),
         ],
         conformer_generator=conformers.ConformerEmbedder(
             method='ETKDGv3',
