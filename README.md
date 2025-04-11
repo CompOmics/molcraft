@@ -40,18 +40,20 @@ featurizer = featurizers.MolGraphFeaturizer(
 graph = featurizer([('N[C@@H](C)C(=O)O', 2.0), ('N[C@@H](CS)C(=O)O', 1.0)])
 print(graph)
 
-model = models.create(
-    layers.Input(graph.spec),
-    layers.NodeEmbedding(dim=128),
-    layers.EdgeEmbedding(dim=128),
-    layers.GraphTransformer(units=128),
-    layers.GraphTransformer(units=128),
-    layers.GraphTransformer(units=128),
-    layers.GraphTransformer(units=128),
-    layers.Readout(mode='mean'),
-    keras.layers.Dense(units=1024, activation='relu'),
-    keras.layers.Dense(units=1024, activation='relu'),
-    keras.layers.Dense(1)
+model = models.GraphModel.from_layers(
+    [
+        layers.Input(graph.spec),
+        layers.NodeEmbedding(dim=128),
+        layers.EdgeEmbedding(dim=128),
+        layers.GraphTransformer(units=128),
+        layers.GraphTransformer(units=128),
+        layers.GraphTransformer(units=128),
+        layers.GraphTransformer(units=128),
+        layers.Readout(mode='mean'),
+        keras.layers.Dense(units=1024, activation='relu'),
+        keras.layers.Dense(units=1024, activation='relu'),
+        keras.layers.Dense(1)
+    ]
 )
 
 pred = model(graph)
