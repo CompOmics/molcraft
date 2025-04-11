@@ -102,7 +102,7 @@ Furthermore, for 3D molecular graphs, a `featurizers.MolGraphFeaturizer3D` is al
             molcraft.descriptors.NumRings(),
         ],
         conformer_generator=conformers.ConformerEmbedder(
-            method='ETKDGv3'
+            method='ETKDGv3',
             num_conformers=5
         ),
         super_atom=True,
