@@ -19,6 +19,23 @@ Highlights
 - Flexible **GraphTensor**
 
 
+Installation
+-------------------
+
+Install the pre-release of molcraft via pip:
+
+.. code:: bash
+
+  pip install molcraft --pre
+
+
+with GPU support:
+
+.. code:: bash
+  
+  pip install molcraft[gpu] --pre
+
+
 ------------------------
 
 .. toctree::
