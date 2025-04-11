@@ -1,0 +1,7 @@
+sphinx==8.2.3
+sphinx_rtd_theme>=1.0
+
+tensorflow
+rdkit 
+pandas
+ipython

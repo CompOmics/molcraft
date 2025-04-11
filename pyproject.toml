@@ -1,0 +1,51 @@
+[project]
+name = "molcraft"
+description = "Graph Neural Networks for Molecular Machine Learning"
+readme = "README.md"
+license = { file = "LICENSE" }
+dynamic = ["version"]
+authors = [
+    {name = "Alexander Kensert", email = "alexander.kensert@gmail.com"}
+]
+keywords = [
+    "python",
+    "machine-learning",
+    "deep-learning",
+    "graph-neural-networks",
+    "molecular-machine-learning",
+    "molecular-graphs",
+    "computational-chemistry",
+    "computational-biology"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "tensorflow>=2.16",
+    "rdkit>=2023.9.5",
+    "pandas>=1.0.3",
+    "ipython>=8.12.0"
+]
+
+[project.optional-dependencies]
+gpu = ["tensorflow[and-cuda]>=2.16"]
+
+[tool.setuptools.dynamic]
+version = { attr = "molcraft.__version__" }
+
+[project.urls]
+Homepage = "https://github.com/akensert/molcraft"
+
+[tool.setuptools.packages.find]
+include = ["molcraft*"]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
