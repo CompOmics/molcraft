@@ -9,6 +9,9 @@ from molcraft import ops
 class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
     
     def batch(self, spec: 'GraphTensor.Spec', batch_size: int | None):
+        """Batches spec.
+        """
+
         def batch_field(f):
             if isinstance(f, tf.TensorSpec):
                 return tf.TensorSpec(
@@ -36,6 +39,9 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
         return batched_spec
     
     def unbatch(self, spec: 'GraphTensor.Spec'):
+        """Unbatches spec.
+        """
+
         def unbatch_field(f):   
             if isinstance(f, tf.TensorSpec):
                 return tf.TensorSpec(
@@ -63,6 +69,8 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
         return unbatched_spec
         
     def encode(self, spec: 'GraphTensor.Spec', value: 'GraphTensor', minimum_rank: int = 0):
+        """Encodes value.
+        """
         unflatten = False if (is_ragged(spec) or is_scalar(spec)) else True 
         if unflatten:
             value = value.unflatten()
@@ -74,6 +82,8 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
         return value_components
     
     def encoding_specs(self, spec: 'GraphTensor.Spec'):
+        """Matches spec and encoded value of `encode(spec, value)`.
+        """
         def encode_fields(f):
             if isinstance(f, tf.TensorSpec):
                 scalar = is_scalar(spec)
@@ -95,6 +105,8 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
         return spec_components
     
     def decode(self, spec, encoded_value):
+        """Decodes encoded value.
+        """
         spec_tuple = tuple(spec.__dict__.values())
         encoded_value = iter(encoded_value)
         value_tuple = [

@@ -194,8 +194,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         Args:
             x: 
                 A `GraphTensor` instance or a `tf.data.Dataset` constructed from
-                a `GraphTensor` instance. Context `label`s and/or `weight`s may
-                be encoded and will be ignored.
+                a `GraphTensor` instance.
             batch_size:
                 Number of samples per batch of computation.
             kwargs:
