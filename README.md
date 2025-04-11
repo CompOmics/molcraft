@@ -12,3 +12,17 @@
 - Modular graph **layers**
 - Serializable graph **featurizers** and **models**
 - Flexible **GraphTensor**
+
+## Installation
+
+Install the pre-release of molcraft via pip:
+
+```bash
+pip install molcraft --pre
+```
+
+with GPU support:
+
+```bash
+pip install molcraft[gpu] --pre
+```
