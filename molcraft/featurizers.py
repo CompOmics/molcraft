@@ -200,12 +200,13 @@ class MolGraphFeaturizer(Featurizer):
         self.feature_dtype = 'float32'
         self.index_dtype = 'int32'
 
-    def call(self, x: str | typing.Tuple) -> tensors.GraphTensor:
-
-        if isinstance(x, (tuple, list, np.ndarray)):
-            x, *args = x
+    def call(self, inputs: str | tuple) -> tensors.GraphTensor:
+        if isinstance(inputs, (tuple, list, np.ndarray)):
+            x, *context = inputs
+            if len(context) and isinstance(context[0], dict):
+                context = copy.deepcopy(context[0])
         else:
-            args = []
+            x, context = inputs, None
 
         mol = chem.Mol.from_encoding(x, explicit_hs=self.include_hs)
 
@@ -220,14 +221,30 @@ class MolGraphFeaturizer(Featurizer):
         bond_feature = self.bond_features(mol)
         context_feature = self.context_feature(mol)
         molecule_size = self.num_atoms(mol)
-
-        context, node, edge = {}, {}, {}
-        for field, value in zip(['size', 'label', 'weight'], [molecule_size] + args):
-            context[field] = value
+        
+        if isinstance(context, dict):
+            if 'x' in context:
+                context['feature'] = context.pop('x')
+            if 'y' in context:
+                context['label'] = context.pop('y')
+            if 'sample_weight' in context:
+                context['weight'] = context.pop('sample_weight')
+            context = {
+                **{'size': molecule_size}, 
+                **context
+            }
+        elif isinstance(context, list):
+            context = {
+                **{'size': molecule_size}, 
+                **{key: value for (key, value) in zip(['label', 'weight'], context)}
+            }
+        else:
+            context = {'size': molecule_size}
 
         if context_feature is not None:
             context['feature'] = context_feature
 
+        node = {}
         node['feature'] = atom_feature
 
         if bond_feature is not None and (self.radius > 1 or self.self_loops):
@@ -239,6 +256,7 @@ class MolGraphFeaturizer(Featurizer):
                 [bond_feature, zero_bond_feature], axis=0
             )    
         
+        edge = {}
         if self.radius == 1:
             edge['source'], edge['target'] = mol.adjacency(
                 fill='full', sparse=True, self_loops=self.self_loops, dtype=self.index_dtype
@@ -494,19 +512,50 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         self.embed_conformer = self.conformer_generator is not None
         self.radius = float(radius) if radius else None
         
-    def call(self, x: str | typing.Tuple) -> tensors.GraphTensor:
+    def call(self, inputs: str | tuple) -> tensors.GraphTensor:
 
-        if isinstance(x, (tuple, list, np.ndarray)):
-            x, *args = x
+        if isinstance(inputs, (tuple, list, np.ndarray)):
+            x, *context = inputs
+            if len(context) and isinstance(context[0], dict):
+                context = copy.deepcopy(context[0])
         else:
-            args = []
+            x, context = inputs, None
 
         explicit_hs = (self.include_hs or self.embed_conformer)
         mol = chem.Mol.from_encoding(x, explicit_hs=explicit_hs)
-
+        
         if mol is None:
+            warn(
+                f'Could not obtain `chem.Mol` from {x}. '
+                'Proceeding without it.'
+            )
             return None
         
+        context_feature = self.context_feature(mol)
+        molecule_size = self.num_atoms(mol) + int(self.super_atom)
+
+        if isinstance(context, dict):
+            if 'x' in context:
+                context['feature'] = context.pop('x')
+            if 'y' in context:
+                context['label'] = context.pop('y')
+            if 'sample_weight' in context:
+                context['weight'] = context.pop('sample_weight')
+            context = {
+                **{'size': molecule_size}, 
+                **context
+            }
+        elif isinstance(context, list):
+            context = {
+                **{'size': molecule_size}, 
+                **{key: value for (key, value) in zip(['label', 'weight'], context)}
+            }
+        else:
+            context = {'size': molecule_size}
+
+        if context_feature is not None:
+            context['feature'] = context_feature
+
         if self.embed_conformer:
             mol = self.conformer_generator(mol)
             if not self.include_hs:
@@ -519,21 +568,13 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
                 'of the `Featurizer` or input a 3D representation of the molecule. '
             )
 
-        context, node, edge = {}, {}, {}
-
-        context['size'] = self.num_atoms(mol) + int(self.super_atom)
-        for field, value in zip(['label', 'weight'], args):
-            context[field] = value
-
+        node = {}
         node['feature'] = self.atom_features(mol)
 
         if self._bond_features:
             edge_feature = self.bond_features(mol)
 
-        context_feature = self.context_feature(mol)
-        if context_feature is not None:
-            context['feature'] = context_feature
-
+        edge = {}
         mols = chem._split_mol_by_confs(mol)
         tensor_list = []
         for i, mol in enumerate(mols):
