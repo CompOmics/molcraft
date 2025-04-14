@@ -134,18 +134,27 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
     __name__ = 'GraphTensor'
 
     def __validate__(self):
-        assert 'size' in self.context, "graph.context['size'] is required."
-        assert self.context['size'].dtype == tf.int32, (
-            "dtype of graph.context['size'] needs to be int32.")
-        assert 'feature' in self.node, "graph.node['feature'] is required."
-        assert 'source' in self.edge, "graph.edge['source'] is required."
-        assert 'target' in self.edge, "graph.edge['target'] is required."
-        assert self.edge['source'].dtype == tf.int32, (
-            "dtype of graph.edge['source'] needs to be int32.")
-        assert self.edge['target'].dtype == tf.int32, (
-            "dtype of graph.edge['target'] needs to be int32.")
-        # TODO: Assert node sizes (based on context['size'])
-        #       Assert edge sizes (based on edge['source'])
+        if tf.executing_eagerly():
+            assert 'size' in self.context, "graph.context['size'] is required."
+            assert self.context['size'].dtype == tf.int32, (
+                "dtype of graph.context['size'] needs to be int32."
+            )
+            assert 'feature' in self.node, "graph.node['feature'] is required."
+            assert 'source' in self.edge, "graph.edge['source'] is required."
+            assert 'target' in self.edge, "graph.edge['target'] is required."
+            assert self.edge['source'].dtype == tf.int32, (
+                "dtype of graph.edge['source'] needs to be int32."
+            )
+            assert self.edge['target'].dtype == tf.int32, (
+                "dtype of graph.edge['target'] needs to be int32."
+            )
+            if isinstance(self.node['feature'], tf.Tensor):
+                num_nodes = keras.ops.shape(self.node['feature'])[0]
+            else:
+                num_nodes = keras.ops.sum(self.node['feature'].row_lengths())
+            assert keras.ops.sum(self.context['size']) == num_nodes, (
+                "graph.node['feature'] tensor is incompatible with graph.context['size']"
+            )
         
     @property 
     def spec(self):
