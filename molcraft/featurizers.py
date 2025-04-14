@@ -530,7 +530,19 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
                 'Proceeding without it.'
             )
             return None
-        
+
+        if self.embed_conformer:
+            mol = self.conformer_generator(mol)
+            if not self.include_hs:
+                mol = chem.remove_hs(mol)
+
+        if mol.num_conformers == 0:
+            raise ValueError(
+                'Cannot featurize a molecule without conformer(s). '
+                'Make sure to pass a `ConformerGenerator` to the constructor '
+                'of the `Featurizer` or input a 3D representation of the molecule. '
+            )
+
         context_feature = self.context_feature(mol)
         molecule_size = self.num_atoms(mol) + int(self.super_atom)
 
@@ -555,19 +567,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
 
         if context_feature is not None:
             context['feature'] = context_feature
-
-        if self.embed_conformer:
-            mol = self.conformer_generator(mol)
-            if not self.include_hs:
-                mol = chem.remove_hs(mol)
-
-        if mol.num_conformers == 0:
-            raise ValueError(
-                'Cannot featurize a molecule without conformer(s). '
-                'Make sure to pass a `ConformerGenerator` to the constructor '
-                'of the `Featurizer` or input a 3D representation of the molecule. '
-            )
-
+            
         node = {}
         node['feature'] = self.atom_features(mol)
 
@@ -604,11 +604,10 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
                 node_conformer['coordinate'] = np.concatenate(
                     [node_conformer['coordinate'], conformer.centroid[None]], axis=0
                 )
-
             tensor_list.append(
                 tensors.GraphTensor(context, node_conformer, edge_conformer)
             )
-
+            
         return tensor_list
     
     def stack(self, outputs):
