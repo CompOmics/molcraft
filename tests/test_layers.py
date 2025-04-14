@@ -105,15 +105,39 @@ class TestLayer(unittest.TestCase):
 
     def test_gin_conv(self):
         for i, tensor in enumerate(self.tensors):
-            with self.subTest(i=i, flat=True):
-                output = layers.GINConv(128)(tensor)
-                self.assertTrue(output.node['feature'].shape[-1] == 128)
+            for skip_connection in [True, False]:
+                for normalize in [True, False]:
+                    with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
+                        output = layers.GINConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                        self.assertTrue(output.node['feature'].shape[-1] == 128)
+                        self.assertTrue(output.edge['feature'].shape[-1] == tensor.node['feature'].shape[-1])
 
     def test_gt_conv(self):
         for i, tensor in enumerate(self.tensors):
-            with self.subTest(i=i, flat=True):
-                output = layers.GTConv(128)(tensor)
-                self.assertTrue(output.node['feature'].shape[-1] == 128)
+            for skip_connection in [True, False]:
+                for normalize in [True, False]:
+                    with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
+                        output = layers.GTConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                        self.assertTrue(output.node['feature'].shape[-1] == 128)
+                        self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
+
+    def test_eg_conv3d(self):
+        for i, tensor in enumerate(self.tensors):
+            tensor = tensor.update(
+                {
+                    'node': {
+                        'coordinate': keras.random.uniform(
+                            shape=(tensor.node['feature'].shape[0], 3), minval=-10, maxval=10)
+                    }
+                }
+            )
+            for skip_connection in [True, False]:
+                for normalize in [True, False]:
+                    with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
+                        output = layers.EGConv3D(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                        self.assertTrue(output.node['feature'].shape[-1] == 128)
+                        self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
+                        self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
 
 if __name__ == '__main__':
     unittest.main()

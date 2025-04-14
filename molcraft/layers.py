@@ -206,12 +206,62 @@ class GraphLayer(keras.layers.Layer):
 class GraphConv(GraphLayer):
 
     """Base graph neural network layer.
+
+    For normalization and skip connection to work, the `GraphConv` subclass 
+    requires the (node feature) output of `aggregate` and `update` to have a 
+    dimension of `self.units`, respectively. 
+
+    Args:
+        units:
+            The number of units.
+        normalize:
+            Whether `LayerNormalization` should be applied to the (node feature) output 
+            of the `aggregate` step. While normalization is recommended, it is not used 
+            by default.
+        skip_connection:
+            Whether (node feature) input should be added to the (node feature) output. 
+            If (node feature) input dim is not equal to `units`, a projection layer will 
+            automatically project the residual before adding it to the output. While skip 
+            connection is recommended, it is not used by default. 
+        kwargs:
+            See arguments of `GraphLayer`.
     """
         
-    def __init__(self, units: int, **kwargs) -> None:
+    def __init__(
+        self, 
+        units: int, 
+        normalize: bool = False,
+        skip_connection: bool = False, 
+        **kwargs
+    ) -> None:
         super().__init__(**kwargs)
         self.units = units
-        
+        self._normalize_aggregate = normalize
+        self._skip_connection = skip_connection
+    
+    def build(self, spec: tensors.GraphTensor.Spec) -> None:
+        node_feature_dim = spec.node['feature'].shape[-1]
+        self._project_input_node_feature = (
+            self._skip_connection and (node_feature_dim != self.units)
+        )
+        if self._project_input_node_feature:
+            warn(
+                '`skip_connection` is set to `True`, but found incompatible dim ' 
+                'between input (node feature dim) and output (`self.units`). '
+                'Automatically applying a projection layer to residual to '
+                'match input and output. '
+            )
+            self._residual_projection = self.get_dense(
+                self.units, name='residual_projection'
+            )
+        if self._normalize_aggregate:
+            self._aggregation_norm = keras.layers.LayerNormalization(
+                name='aggregation_normalizer'
+            )
+            self._aggregation_norm.build([None, self.units])
+
+        super().build(spec)
+
     @abc.abstractmethod
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Compute messages.
@@ -256,19 +306,522 @@ class GraphConv(GraphLayer):
             tensor:
                 A `GraphTensor` instance.
         """
+        
+        if self._skip_connection:
+            input_node_feature = tensor.node['feature']
+            if self._project_input_node_feature:
+                input_node_feature = self._residual_projection(input_node_feature)
+
         tensor = self.message(tensor)
         tensor = self.aggregate(tensor)
+
+        if self._normalize_aggregate:
+            normalized_node_feature = self._aggregation_norm(tensor.node['feature'])
+            tensor = tensor.update({'node': {'feature': normalized_node_feature}})
+
         tensor = self.update(tensor)
-        return tensor 
+
+        if not self._skip_connection:
+            return tensor
+        
+        updated_node_feature = tensor.node['feature']
+        return tensor.update(
+            {
+                'node': {
+                    'feature': updated_node_feature + input_node_feature
+                }
+            }
+        )
 
     def get_config(self) -> dict:
         config = super().get_config()
         config.update({
-            'units': self.units
+            'units': self.units,
+            'normalize': self._normalize_aggregate,
+            'skip_connection': self._skip_connection,
         })
         return config
     
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class GINConv(GraphConv):
+
+    """Graph isomorphism network layer.
+    """
+
+    def __init__(
+        self,
+        units: int,
+        activation: keras.layers.Activation | str | None = 'relu',
+        use_bias: bool = True,
+        normalize: bool = True,
+        dropout: float = 0.0,
+        update_edge_feature: bool = True,
+        **kwargs,
+    ):
+        super().__init__(
+            units=units, 
+            normalize=normalize, 
+            use_bias=use_bias, 
+            **kwargs
+        )
+        self._activation = keras.activations.get(activation)
+        self._dropout = dropout 
+        self._update_edge_feature = update_edge_feature
+
+    def build_from_spec(self, spec: tensors.GraphTensor.Spec) -> None:
+        """Builds the layer.
+        """
+        node_feature_dim = spec.node['feature'].shape[-1]
+
+        self.epsilon = self.add_weight(
+            name='epsilon', 
+            shape=(), 
+            initializer='zeros',
+            trainable=True,
+        )
+
+        if 'feature' in spec.edge:
+            edge_feature_dim = spec.edge['feature'].shape[-1]
+
+            if not self._update_edge_feature:
+                if (edge_feature_dim != node_feature_dim):
+                    warn(
+                        'Found edge feature dim to be incompatible with node feature dim. '
+                        'Automatically adding a edge feature projection layer to match '
+                        'the dim of node features.'
+                    )
+                    self._update_edge_feature = True 
+
+            if self._update_edge_feature:
+                self._edge_dense = self.get_dense(node_feature_dim)
+                self._edge_dense.build([None, edge_feature_dim])
+        else:
+            self._update_edge_feature = False
+                
+        self._feedforward_intermediate_dense = self.get_dense(self.units)
+        self._feedforward_intermediate_dense.build([None, node_feature_dim])
+
+        has_overridden_update = self.__class__.update != GINConv.update 
+        if not has_overridden_update:
+            # Use default feedforward network
+
+            self._feedforward_dropout = keras.layers.Dropout(self._dropout)
+            self._feedforward_activation = self._activation
+                
+            self._feedforward_output_dense = self.get_dense(self.units)
+            self._feedforward_output_dense.build([None, self.units])
     
+    def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        """Computes messages.
+        """
+        message = tensor.gather('feature', 'source')
+        edge_feature = tensor.edge.get('feature')
+        if self._update_edge_feature:
+            edge_feature = self._edge_dense(edge_feature)
+        if edge_feature is not None:
+            message += edge_feature
+        return tensor.update(
+            {
+                'edge': {
+                    'message': message,
+                    'feature': edge_feature
+                }
+            }
+        )
+
+    def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        """Aggregates messages.
+        """
+        node_feature = tensor.aggregate('message')
+        node_feature += (1 + self.epsilon) * tensor.node['feature']
+        node_feature = self._feedforward_intermediate_dense(node_feature)
+        node_feature = self._feedforward_activation(node_feature)
+        return tensor.update(
+            {
+                'node': {
+                    'feature': node_feature,
+                },
+                'edge': {
+                    'message': None,
+                }
+            }
+        )
+    
+    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        """Updates nodes. 
+        """
+        node_feature = tensor.node['feature']
+        node_feature = self._feedforward_dropout(node_feature)
+        node_feature = self._feedforward_output_dense(node_feature)
+        return tensor.update(
+            {
+                'node': {
+                    'feature': node_feature,
+                }
+            }
+        )
+    
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config.update({
+            'activation': keras.activations.serialize(self._activation),
+            'dropout': self._dropout, 
+            'update_edge_feature': self._update_edge_feature
+        })
+        return config
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class GTConv(GraphConv):
+
+    """Graph transformer layer.
+    """
+
+    def __init__(
+        self,
+        units: int,
+        heads: int = 8,
+        activation: keras.layers.Activation | str | None = "relu",
+        use_bias: bool = True,
+        normalize: bool = True,
+        dropout: float = 0.0,
+        attention_dropout: float = 0.0,
+        **kwargs,
+    ) -> None:
+        kwargs['skip_connection'] = False
+        super().__init__(
+            units=units, 
+            normalize=normalize, 
+            use_bias=use_bias,
+            **kwargs
+        )
+        self._heads = heads
+        if self.units % self.heads != 0:
+            raise ValueError(f"units need to be divisible by heads.")
+        self._head_units = self.units // self.heads 
+        self._activation = keras.activations.get(activation)
+        self._dropout = dropout
+        self._attention_dropout = attention_dropout
+        self._normalize = normalize
+
+    @property 
+    def heads(self):
+        return self._heads 
+    
+    @property 
+    def head_units(self):
+        return self._head_units 
+    
+    def build_from_spec(self, spec):
+        """Builds the layer.
+        """
+        node_feature_dim = spec.node['feature'].shape[-1]
+        self.project_residual = node_feature_dim != self.units
+        if self.project_residual:
+            warn(
+                '`GTConv` uses residual connections, but found incompatible dim ' 
+                'between input (node feature dim) and output (`self.units`). '
+                'Automatically applying a projection layer to residual to '
+                'match input and output. '
+            )   
+            self._residual_dense = self.get_dense(self.units)
+            self._residual_dense.build([None, node_feature_dim])
+            
+        self._query_dense = self.get_einsum_dense(
+            'ij,jkh->ikh', (self.head_units, self.heads)
+        )
+        self._query_dense.build([None, node_feature_dim])
+
+        self._key_dense = self.get_einsum_dense(
+            'ij,jkh->ikh', (self.head_units, self.heads)
+        )
+        self._key_dense.build([None, node_feature_dim])
+
+        self._value_dense = self.get_einsum_dense(
+            'ij,jkh->ikh', (self.head_units, self.heads)
+        )
+        self._value_dense.build([None, node_feature_dim])
+
+        self._output_dense = self.get_dense(self.units)
+        self._output_dense.build([None, self.units])
+
+        self._softmax_dropout = keras.layers.Dropout(self._attention_dropout) 
+
+        self._self_attention_dropout = keras.layers.Dropout(self._dropout)
+
+        self._add_edge_bias = not 'bias' in spec.edge
+        if self._add_edge_bias:
+            self._add_edge_bias = AddEdgeBias()
+            self._add_edge_bias.build_from_spec(spec)
+
+        has_overridden_update = self.__class__.update != GTConv.update 
+        if not has_overridden_update:
+            
+            if self._normalize:
+                self._feedforward_output_norm = keras.layers.LayerNormalization()
+                self._feedforward_output_norm.build([None, self.units])
+
+            self._feedforward_dropout = keras.layers.Dropout(self._dropout)
+
+            self._feedforward_intermediate_dense = self.get_dense(self.units)
+            self._feedforward_intermediate_dense.build([None, self.units])
+
+            self._feedforward_output_dense = self.get_dense(self.units)
+            self._feedforward_output_dense.build([None, self.units])
+
+
+    def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        """Computes messages.
+        """
+
+        node_feature = tensor.node['feature']
+        
+        query = self._query_dense(node_feature)
+        key = self._key_dense(node_feature)
+        value = self._value_dense(node_feature)
+
+        query = ops.gather(query, tensor.edge['source'])
+        key = ops.gather(key, tensor.edge['target'])
+        value = ops.gather(value, tensor.edge['source'])
+
+        attention_score = keras.ops.sum(query * key, axis=1, keepdims=True)
+        attention_score /= keras.ops.sqrt(float(self.head_units))
+
+        if self._add_edge_bias:
+            tensor = self._add_edge_bias(tensor)
+            
+        attention_score += keras.ops.expand_dims(tensor.edge['bias'], -1)
+        
+        attention = ops.edge_softmax(attention_score, tensor.edge['target'])
+        attention = self._softmax_dropout(attention)
+
+        return tensor.update(
+            {
+                'edge': {
+                    'message': value,
+                    'weight': attention,
+                },
+            }
+        )
+
+    def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        """Aggregates messages.
+        """
+        node_feature = tensor.aggregate('message')
+        node_feature = keras.ops.reshape(node_feature, (-1, self.units))
+        node_feature = self._output_dense(node_feature)
+        node_feature = self._self_attention_dropout(node_feature)
+        return tensor.update(
+            {
+                'node': {
+                    'feature': node_feature,
+                    'residual': tensor.node['feature']
+                },
+                'edge': {
+                    'message': None,
+                    'weight': None,
+                }
+            }
+        )
+
+    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        """Updates nodes. 
+        """
+        node_feature = tensor.node['feature']
+
+        residual = tensor.node['residual']
+        if self.project_residual:
+            residual = self._residual_dense(residual)
+
+        node_feature += residual
+        residual = node_feature
+
+        node_feature = self._feedforward_intermediate_dense(node_feature)
+        node_feature = self._activation(node_feature)
+        node_feature = self._feedforward_output_dense(node_feature)
+        node_feature = self._feedforward_dropout(node_feature)
+        if self._normalize:
+            node_feature = self._feedforward_output_norm(node_feature)
+
+        node_feature += residual
+
+        return tensor.update(
+            {
+                'node': {
+                    'feature': node_feature,
+                },
+            }
+        )
+    
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config.update({
+            "heads": self._heads,
+            'activation': keras.activations.serialize(self._activation),
+            'dropout': self._dropout, 
+            'attention_dropout': self._attention_dropout,
+        })
+        return config
+    
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class EGConv3D(GraphConv):
+
+    """Equivariant graph neural network layer.
+    """
+
+    def __init__(
+        self, 
+        units: int = 128, 
+        activation: keras.layers.Activation | str | None = None, 
+        use_bias: bool = True,
+        normalize: bool = True,
+        dropout: float = 0.0,
+        **kwargs
+    ) -> None:
+        super().__init__(
+            units=units, 
+            normalize=normalize, 
+            use_bias=use_bias,
+            **kwargs
+        )
+        self._activation = keras.activations.get(activation)
+        self._dropout = dropout or 0.0
+
+    def build_from_spec(self, spec: tensors.GraphTensor.Spec) -> None:
+        if 'coordinate' not in spec.node:
+            raise ValueError(
+                'Could not find `coordinate`s in node, '
+                'which is required for Conv3D layers.'
+            )
+        node_feature_dim = spec.node['feature'].shape[-1]
+        feature_dim = node_feature_dim + node_feature_dim + 1
+        if 'feature' in spec.edge:
+            self._has_edge_feature = True
+            edge_feature_dim = spec.edge['feature'].shape[-1]
+            feature_dim += edge_feature_dim
+        else:
+            self._has_edge_feature = False
+
+        self.message_fn = self.get_dense(self.units, activation=self._activation)
+        self.message_fn.build([None, feature_dim])
+        self.dense_position = self.get_dense(1)
+        self.dense_position.build([None, self.units])
+
+        has_overridden_update = self.__class__.update != EGConv3D.update 
+        if not has_overridden_update:
+            self.update_fn = self.get_dense(self.units, activation=self._activation)
+            self.update_fn.build([None, node_feature_dim + self.units])
+            self._dropout_layer = keras.layers.Dropout(self._dropout)
+
+    def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        """Computes messages.
+        """
+        relative_node_coordinate = keras.ops.subtract(
+            tensor.gather('coordinate', 'target'), 
+            tensor.gather('coordinate', 'source')
+        ) 
+        euclidean_distance = keras.ops.sum(
+            keras.ops.square(
+                relative_node_coordinate
+            ), 
+            axis=-1, 
+            keepdims=True
+        )
+        feature = keras.ops.concatenate(
+            [
+                tensor.gather('feature', 'target'), 
+                tensor.gather('feature', 'source'), 
+                euclidean_distance, 
+            ], 
+            axis=-1
+        )
+        if self._has_edge_feature:
+            feature = keras.ops.concatenate(
+                [
+                    feature,
+                    tensor.edge['feature']
+                ], 
+                axis=-1
+            )
+        message = self.message_fn(feature)
+        relative_node_coordinate = keras.ops.multiply(
+            relative_node_coordinate,
+            self.dense_position(message)
+        )
+        return tensor.update(
+            {
+                'edge': {
+                    'message': message,
+                    'relative_node_coordinate': relative_node_coordinate
+                }
+            }
+        )
+
+    def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        """Aggregates messages.
+        """
+        coefficient = keras.ops.bincount(
+            tensor.edge['source'], 
+            minlength=tensor.num_nodes
+        )
+        coefficient = keras.ops.cast(
+            coefficient, tensor.node['coordinate'].dtype
+        )
+        coefficient = keras.ops.expand_dims(
+            keras.ops.divide_no_nan(1, coefficient), axis=1
+        )  
+
+        updated_coordinate = tensor.aggregate('relative_node_coordinate') * coefficient
+        updated_coordinate += tensor.node['coordinate']
+
+        aggregate = tensor.aggregate('message')
+        return tensor.update(
+            {
+                'node': {
+                    'feature': aggregate, 
+                    'coordinate': updated_coordinate,
+                    'previous_feature': tensor.node['feature'],
+                },
+                'edge': {
+                    'message': None,
+                    'relative_node_coordinate': None
+                }
+            }
+        ) 
+
+    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        """Updates nodes.
+        """
+        updated_node_feature = self.update_fn(
+            keras.ops.concatenate(
+                [
+                    tensor.node['feature'], 
+                    tensor.node['previous_feature']
+                ], 
+                axis=-1
+            )
+        )  
+        updated_node_feature = self._dropout_layer(updated_node_feature)
+        return tensor.update(
+            {
+                'node': {
+                    'feature': updated_node_feature, 
+                    'previous_feature': None,
+                },
+            }
+        )
+    
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config.update({
+            'activation': keras.activations.serialize(self._activation),
+            'dropout': self._dropout,
+        })
+        return config 
+    
+
 @keras.saving.register_keras_serializable(package='molcraft')
 class Projection(GraphLayer):
     """Base graph projection layer.
@@ -646,390 +1199,6 @@ class EdgeProjection(Projection):
     """
     def __init__(self, units: int = None, activation: str = None, **kwargs):
         super().__init__(units=units, activation=activation, field='edge', **kwargs)
-
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class GINConv(GraphConv):
-
-    """Graph isomorphism network layer.
-    """
-
-    def __init__(
-        self,
-        units: int,
-        activation: keras.layers.Activation | str | None = 'relu',
-        dropout: float = 0.0,
-        normalize: bool = True,
-        update_edge_feature: bool = True,
-        **kwargs,
-    ):
-        super().__init__(units=units, **kwargs)
-        self._activation = keras.activations.get(activation)
-        self._normalize = normalize
-        self._dropout = dropout 
-        self._update_edge_feature = update_edge_feature
-
-    def build_from_spec(self, spec: tensors.GraphTensor.Spec) -> None:
-        """Builds the layer.
-        """
-        node_feature_dim = spec.node['feature'].shape[-1]
-
-        self.epsilon = self.add_weight(
-            name='epsilon', 
-            shape=(), 
-            initializer='zeros',
-            trainable=True,
-        )
-
-        if 'feature' in spec.edge:
-            edge_feature_dim = spec.edge['feature'].shape[-1]
-
-            if not self._update_edge_feature:
-                if (edge_feature_dim != node_feature_dim):
-                    warn(
-                        'Found edge feature dim to be incompatible with node feature dim. '
-                        'Automatically adding a edge feature projection layer to match '
-                        'the dim of node features.'
-                    )
-                    self._update_edge_feature = True 
-
-            if self._update_edge_feature:
-                self._edge_dense = self.get_dense(node_feature_dim)
-                self._edge_dense.build([None, edge_feature_dim])
-        else:
-            self._update_edge_feature = False
-                
-        has_overridden_update = self.__class__.update != GINConv.update 
-        if not has_overridden_update:
-            # Use default feedforward network
-            self._feedforward_intermediate_dense = self.get_dense(self.units)
-            self._feedforward_intermediate_dense.build([None, node_feature_dim])
-
-            if self._normalize:
-                self._feedforward_intermediate_norm = keras.layers.BatchNormalization()
-                self._feedforward_intermediate_norm.build([None, self.units])
-
-            self._feedforward_dropout = keras.layers.Dropout(self._dropout)
-            self._feedforward_activation = self._activation
-                
-            self._feedforward_output_dense = self.get_dense(self.units)
-            self._feedforward_output_dense.build([None, self.units])
-    
-    def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        """Compute messages.
-        """
-        message = tensor.gather('feature', 'source')
-        edge_feature = tensor.edge.get('feature')
-        if self._update_edge_feature:
-            edge_feature = self._edge_dense(edge_feature)
-        if edge_feature is not None:
-            message += edge_feature
-        return tensor.update(
-            {
-                'edge': {
-                    'message': message,
-                    'feature': edge_feature
-                }
-            }
-        )
-
-    def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        """Aggregates messages.
-        """
-        node_feature = tensor.aggregate('message')
-        node_feature += (1 + self.epsilon) * tensor.node['feature']
-        return tensor.update(
-            {
-                'node': {
-                    'feature': node_feature,
-                },
-                'edge': {
-                    'message': None,
-                }
-            }
-        )
-    
-    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        """Updates nodes. 
-        """
-        node_feature = tensor.node['feature']
-        node_feature = self._feedforward_intermediate_dense(node_feature)
-        node_feature = self._feedforward_activation(node_feature)
-        if self._normalize:
-            node_feature = self._feedforward_intermediate_norm(node_feature)
-        node_feature = self._feedforward_dropout(node_feature)
-        node_feature = self._feedforward_output_dense(node_feature)
-        return tensor.update(
-            {
-                'node': {
-                    'feature': node_feature,
-                }
-            }
-        )
-    
-    def get_config(self) -> dict:
-        config = super().get_config()
-        config.update({
-            'activation': keras.activations.serialize(self._activation),
-            'dropout': self._dropout, 
-            'normalize': self._normalize,
-        })
-        return config
-
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class GTConv(GraphConv):
-
-    """Graph transformer layer.
-    """
-
-    def __init__(
-        self,
-        units: int,
-        heads: int = 8,
-        activation: keras.layers.Activation | str | None = "relu",
-        dropout: float = 0.0,
-        attention_dropout: float = 0.0,
-        normalize: bool = True,
-        normalize_first: bool = True,
-        **kwargs,
-    ) -> None:
-        super().__init__(units=units, **kwargs)
-        self._heads = heads
-        if self.units % self.heads != 0:
-            raise ValueError(f"units need to be divisible by heads.")
-        self._head_units = self.units // self.heads 
-        self._activation = keras.activations.get(activation)
-        self._dropout = dropout
-        self._attention_dropout = attention_dropout
-        self._normalize = normalize
-        self._normalize_first = normalize_first
-
-    @property 
-    def heads(self):
-        return self._heads 
-    
-    @property 
-    def head_units(self):
-        return self._head_units 
-    
-    def build_from_spec(self, spec):
-        """Builds the layer.
-        """
-        node_feature_dim = spec.node['feature'].shape[-1]
-        incompatible_dim = node_feature_dim != self.units
-        if incompatible_dim:
-            warnings.warn(
-                message=(
-                    '`GTConv` uses residual connections, but input node feature dim '
-                    'is incompatible with intermediate dim (`units`). '
-                    'Automatically projecting first residual to match its dim with intermediate dim.'
-                ),
-                category=UserWarning,
-                stacklevel=1
-            )
-            self._residual_dense = self.get_dense(self.units)
-            self._residual_dense.build([None, node_feature_dim])
-            self._project_residual = True
-        else:
-            self._project_residual = False
-            
-        self._query_dense = self.get_einsum_dense(
-            'ij,jkh->ikh', (self.head_units, self.heads)
-        )
-        self._query_dense.build([None, node_feature_dim])
-
-        self._key_dense = self.get_einsum_dense(
-            'ij,jkh->ikh', (self.head_units, self.heads)
-        )
-        self._key_dense.build([None, node_feature_dim])
-
-        self._value_dense = self.get_einsum_dense(
-            'ij,jkh->ikh', (self.head_units, self.heads)
-        )
-        self._value_dense.build([None, node_feature_dim])
-
-        self._output_dense = self.get_dense(self.units)
-        self._output_dense.build([None, self.units])
-
-        self._softmax_dropout = keras.layers.Dropout(self._attention_dropout) 
-
-        self._self_attention_norm = keras.layers.LayerNormalization()
-        if self._normalize_first:
-            self._self_attention_norm.build([None, node_feature_dim])
-        else:
-            self._self_attention_norm.build([None, self.units])
-
-        self._self_attention_dropout = keras.layers.Dropout(self._dropout)
-
-        has_overriden_edge_bias = (
-            self.__class__.add_edge_bias != GTConv.add_edge_bias
-        )
-        if not has_overriden_edge_bias:
-            self._has_edge_length = 'length' in spec.edge
-            if self._has_edge_length and 'bias' not in spec.edge:
-                edge_length_dim = spec.edge['length'].shape[-1]
-                self._spatial_encoding_dense = self.get_einsum_dense(
-                    'ij,jkh->ikh', (1, self.heads), kernel_initializer='zeros'
-                )
-                self._spatial_encoding_dense.build([None, edge_length_dim])
-
-            self._has_edge_feature = 'feature' in spec.edge
-            if self._has_edge_feature and 'bias' not in spec.edge:
-                edge_feature_dim = spec.edge['feature'].shape[-1]
-                self._edge_feature_dense = self.get_einsum_dense(
-                    'ij,jkh->ikh', (1, self.heads),
-                )
-                self._edge_feature_dense.build([None, edge_feature_dim])
-
-        has_overridden_update = self.__class__.update != GTConv.update 
-        if not has_overridden_update:
-
-            self._feedforward_norm = keras.layers.LayerNormalization()
-            self._feedforward_norm.build([None, self.units])
-
-            self._feedforward_dropout = keras.layers.Dropout(self._dropout)
-
-            self._feedforward_intermediate_dense = self.get_dense(self.units)
-            self._feedforward_intermediate_dense.build([None, self.units])
-
-            self._feedforward_output_dense = self.get_dense(self.units)
-            self._feedforward_output_dense.build([None, self.units])
-
-    def add_node_bias(self, tensor: tensors.GraphTensor) -> tf.Tensor:
-        return tensor 
-    
-    def add_edge_bias(self, tensor: tensors.GraphTensor) -> tf.Tensor:
-        if 'bias' in tensor.edge:
-            return tensor 
-        elif not self._has_edge_feature and not self._has_edge_length:
-            return tensor 
-        
-        if self._has_edge_feature and not self._has_edge_length:
-            edge_bias = self._edge_feature_dense(tensor.edge['feature'])
-        elif not self._has_edge_feature and self._has_edge_length:
-            edge_bias = self._spatial_encoding_dense(tensor.edge['length'])
-        else:
-            edge_bias = (
-                self._edge_feature_dense(tensor.edge['feature']) + 
-                self._spatial_encoding_dense(tensor.edge['length'])
-            )
- 
-        return tensor.update(
-            {
-                'edge': {
-                    'bias': edge_bias
-                }
-            }
-        )
-
-    def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        """Compute messages.
-        """
-        tensor = self.add_edge_bias(tensor)
-        tensor = self.add_node_bias(tensor)
-
-        node_feature = tensor.node['feature']
-
-        if 'bias' in tensor.node:
-            node_feature += tensor.node['bias']
-        
-        if self._normalize_first:
-            node_feature = self._self_attention_norm(node_feature)
-        
-        query = self._query_dense(node_feature)
-        key = self._key_dense(node_feature)
-        value = self._value_dense(node_feature)
-
-        query = ops.gather(query, tensor.edge['source'])
-        key = ops.gather(key, tensor.edge['target'])
-        value = ops.gather(value, tensor.edge['source'])
-
-        attention_score = keras.ops.sum(query * key, axis=1, keepdims=True)
-        attention_score /= keras.ops.sqrt(float(self.units))
-
-        if 'bias' in tensor.edge:
-            attention_score += tensor.edge['bias']
-        
-        attention = ops.edge_softmax(attention_score, tensor.edge['target'])
-        attention = self._softmax_dropout(attention)
-
-        return tensor.update(
-            {
-                'edge': {
-                    'message': value,
-                    'weight': attention,
-                },
-            }
-        )
-
-    def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        """Aggregates messages.
-        """
-        node_feature = tensor.aggregate('message')
-
-        node_feature = keras.ops.reshape(node_feature, (-1, self.units))
-        node_feature = self._output_dense(node_feature)
-        node_feature = self._self_attention_dropout(node_feature)
-
-        residual = tensor.node['feature']
-        if self._project_residual:
-            residual = self._residual_dense(residual)
-        node_feature += residual
-
-        if not self._normalize_first:
-            node_feature = self._self_attention_norm(node_feature)
-
-        return tensor.update(
-            {
-                'node': {
-                    'feature': node_feature,
-                },
-                'edge': {
-                    'message': None,
-                    'weight': None,
-                }
-            }
-        )
-    
-
-    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        """Updates nodes. 
-        """
-        node_feature = tensor.node['feature']
-
-        if self._normalize_first:
-            node_feature = self._feedforward_norm(node_feature)
-
-        node_feature = self._feedforward_intermediate_dense(node_feature)
-        node_feature = self._activation(node_feature)
-        node_feature = self._feedforward_output_dense(node_feature)
-
-        node_feature = self._feedforward_dropout(node_feature)
-        node_feature += tensor.node['feature']
-
-        if not self._normalize_first:
-            node_feature = self._feedforward_norm(node_feature)
-
-        return tensor.update(
-            {
-                'node': {
-                    'feature': node_feature,
-                },
-            }
-        )
-    
-    def get_config(self) -> dict:
-        config = super().get_config()
-        config.update({
-            "heads": self._heads,
-            'activation': keras.activations.serialize(self._activation),
-            'dropout': self._dropout, 
-            'attention_dropout': self._attention_dropout,
-            'normalize': self._normalize,
-            'normalize_first': self._normalize_first,
-        })
-        return config
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -1096,6 +1265,37 @@ class Readout(keras.layers.Layer):
         config['mode'] = self.mode 
         return config 
 
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class AddEdgeBias(GraphLayer):
+
+    def build_from_spec(self, spec: tensors.GraphTensor.Spec) -> None:
+        self._has_edge_length = 'length' in spec.edge
+        self._has_edge_feature = 'feature' in spec.edge
+        if self._has_edge_feature:
+            self._edge_feature_dense = self.get_dense(units=1)
+        if self._has_edge_length:
+            self._edge_length_dense = self.get_dense(
+                units=1, kernel_initializer='zeros'
+            )
+            
+    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        bias = keras.ops.zeros(
+            shape=(tensor.num_edges, 1), 
+            dtype=tensor.node['feature'].dtype
+        )
+        if self._has_edge_feature:
+            bias += self._edge_feature_dense(tensor.edge['feature'])
+        if self._has_edge_length:
+            bias += self._edge_length_dense(tensor.edge['length'])
+        return tensor.update(
+            {
+                'edge': {
+                    'bias': bias
+                }
+            }
+        )
+    
 
 def Input(spec: tensors.GraphTensor.Spec) -> dict:
     """Used to specify inputs to model.

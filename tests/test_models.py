@@ -138,6 +138,10 @@ class TestModel(unittest.TestCase):
                 self.assertTrue(isinstance(metrics, list))
                 del model
 
+    # TODO: Write test for saving and loading model: model(tensor) == loaded_model(tensor)
+    def test_saved_model(self):
+        pass
+
     def test_subclassed_model(self):
 
         def get_model(tensor):
