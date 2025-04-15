@@ -1003,12 +1003,14 @@ class NodeEmbedding(GraphLayer):
     def __init__(
         self, 
         dim: int = None, 
+        normalize: bool = True,
         embed_context: bool = True,
         allow_masking: bool = True, 
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self.dim = dim
+        self._normalize = normalize
         self._embed_context = embed_context
         self._masking_rate = None
         self._allow_masking = allow_masking
@@ -1035,6 +1037,10 @@ class NodeEmbedding(GraphLayer):
             context_feature_dim = spec.context['feature'].shape[-1]
             self._context_dense = self.get_dense(self.dim)
             self._context_dense.build([None, context_feature_dim])
+        
+        if self._normalize:
+            self._norm = keras.layers.LayerNormalization()
+            self._norm.build([None, self.dim])
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Calls the layer.
@@ -1068,6 +1074,9 @@ class NodeEmbedding(GraphLayer):
             # Slience warning of 'no gradients for variables'
             feature = feature + (self._mask_feature * 0.0)
 
+        if self._normalize:
+            feature = self._norm(feature)
+
         return tensor.update({'node': {'feature': feature}})
 
     @property 
@@ -1087,6 +1096,8 @@ class NodeEmbedding(GraphLayer):
         config = super().get_config()
         config.update({
             'dim': self.dim,
+            'normalize': self._normalize,
+            'embed_context': self._embed_context,
             'allow_masking': self._allow_masking
         })
         return config
@@ -1103,11 +1114,13 @@ class EdgeEmbedding(GraphLayer):
     def __init__(
         self, 
         dim: int = None, 
+        normalize: bool = True,
         allow_masking: bool = True, 
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self.dim = dim
+        self._normalize = normalize
         self._masking_rate = None
         self._allow_masking = allow_masking
 
@@ -1125,6 +1138,9 @@ class EdgeEmbedding(GraphLayer):
             self._super_feature = self.get_weight(shape=[self.dim], name='super_edge_feature')
         if self._allow_masking:
             self._mask_feature = self.get_weight(shape=[self.dim], name='mask_edge_feature')
+        if self._normalize:
+            self._norm = keras.layers.LayerNormalization()
+            self._norm.build([None, self.dim])
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Calls the layer.
@@ -1153,6 +1169,9 @@ class EdgeEmbedding(GraphLayer):
             # Slience warning of 'no gradients for variables'
             feature = feature + (self._mask_feature * 0.0)
 
+        if self._normalize:
+            feature = self._norm(feature)
+
         return tensor.update({'edge': {'feature': feature}})
 
     @property 
@@ -1172,6 +1191,7 @@ class EdgeEmbedding(GraphLayer):
         config = super().get_config()
         config.update({
             'dim': self.dim,
+            'normalize': self._normalize,
             'allow_masking': self._allow_masking
         })
         return config
