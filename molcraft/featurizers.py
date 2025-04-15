@@ -402,6 +402,7 @@ class MolGraphFeaturizer(Featurizer):
         return cls(**config)
     
 
+@keras.saving.register_keras_serializable(package='molcraft')
 class MolGraphFeaturizer3D(MolGraphFeaturizer):
 
     """Molecular 3d-graph featurizer.
@@ -627,7 +628,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         config['conformer_generator'] = keras.saving.deserialize_keras_object(
             config['conformer_generator']
         )
-        return super().from_config(**config)
+        return super().from_config(config)
     
 
 def save_featurizer(

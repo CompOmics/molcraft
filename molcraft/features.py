@@ -155,9 +155,11 @@ class Distance(EdgeFeature):
         encode_oov: bool = True, 
         **kwargs,
     ) -> None:
-        if max_distance is None:
-            max_distance = 20
-        vocab = list(range(max_distance + 1))
+        vocab = kwargs.pop('vocab', None)
+        if not vocab:
+            if max_distance is None:
+                max_distance = 20
+            vocab = list(range(max_distance + 1))
         super().__init__(
             vocab=vocab, 
             allow_oov=allow_oov, 
