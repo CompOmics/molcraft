@@ -315,10 +315,16 @@ class FunctionalGraphModel(functional.Functional, GraphModel):
         ]
 
 
-def save_model(model: keras.Model, filepath: str | Path, *args, **kwargs) -> None:
+def save_model(model: GraphModel, filepath: str | Path, *args, **kwargs) -> None:
+    if not model.built:
+        raise ValueError(
+            'Model and its layers have not yet been (fully) built. '
+            'Build the model before saving it: `model.build(graph_spec)` '
+            'or `model(graph)`.'
+        )
     keras.models.save_model(model, filepath, *args, **kwargs)
 
-def load_model(filepath: str | Path, inputs=None, *args, **kwargs) -> None:
+def load_model(filepath: str | Path, inputs=None, *args, **kwargs) -> GraphModel:
     return keras.models.load_model(filepath, *args, **kwargs)
 
 def create(
@@ -333,7 +339,7 @@ def create(
 def interpret(
     model: GraphModel,
     graph_tensor: tensors.GraphTensor,
-) -> tuple[tf.Tensor | tf.RaggedTensor | np.ndarray, tf.Tensor | np.ndarray]:
+) -> tensors.GraphTensor:
     x = graph_tensor
     if tensors.is_ragged(x):
         x = x.flatten()
@@ -372,6 +378,31 @@ def interpret(
             }
         }
     )
+
+def saliency(
+    model: GraphModel,
+    graph_tensor: tensors.GraphTensor
+) -> tensors.GraphTensor:
+    x = graph_tensor
+    if tensors.is_ragged(x):
+        x = x.flatten()
+    y_true = x.context.get('label')
+    with tf.GradientTape(watch_accessed_variables=False) as tape:
+        tape.watch(x.node['feature'])
+        y_pred = model(x, training=False)
+        if y_true is not None and len(y_true.shape) > 1: 
+            target = tf.gather_nd(y_pred, tf.where(y_true != 0))
+        else:
+            target = y_pred
+    gradients = tape.gradient(target, x.node['feature'])
+    gradients = keras.ops.absolute(gradients)
+    return graph_tensor.update(
+        {
+            'node': {
+                'feature_saliency': gradients
+            }
+        }
+    ) 
 
 def predict(
     model: GraphModel,
