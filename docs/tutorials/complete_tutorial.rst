@@ -20,7 +20,7 @@ Part 3: Complete modeling pipeline
     # TODO: Allow label masks for missing labels
 
     train_data, validation_data, test_data = datasets.split(
-        data, train_frac=0.8, validation_frac=0.1, test_frac=0.1, shuffle=True, random_state=42,
+        data, train_size=0.8, validation_size=0.1, test_size=0.1, shuffle=True, random_state=42,
     )
 
     featurizer = featurizers.MolGraphFeaturizer(

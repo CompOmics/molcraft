@@ -48,7 +48,7 @@ and then subsequently embed that molecular graph.
             features.BondType(),
             features.IsRotatable(),
         ],
-        descriptors=[
+        molecule_features=[
             descriptors.MolWeight(),
             descriptors.MolTPSA(),
             descriptors.MolLogP(),
@@ -87,7 +87,7 @@ Furthermore, for 3D molecular graphs, a `featurizers.MolGraphFeaturizer3D` is al
             features.TotalNumHs(),
             features.Degree(),
         ],
-        descriptors=[
+        molecule_features=[
             descriptors.MolWeight(),
             descriptors.MolTPSA(),
             descriptors.MolLogP(),
