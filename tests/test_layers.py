@@ -103,23 +103,109 @@ class TestLayer(unittest.TestCase):
             ),
         ]
 
-    def test_gin_conv(self):
+    def test_gi_conv(self):
         for i, tensor in enumerate(self.tensors):
-            for skip_connection in [True, False]:
-                for normalize in [True, False]:
-                    with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
-                        output = layers.GINConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
-                        self.assertTrue(output.node['feature'].shape[-1] == 128)
-                        self.assertTrue(output.edge['feature'].shape[-1] == tensor.node['feature'].shape[-1])
+            for drop_edge_feature in [False, True]:
+                if drop_edge_feature:
+                    tensor = tensor.update(
+                        {
+                            'edge': {
+                                'feature': None
+                            }
+                        }
+                    )
+                for skip_connection in [True, False]:
+                    for normalize in [True, False]:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
+                            output = layers.GIConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                            self.assertTrue(output.node['feature'].shape[-1] == 128)
+                            if not drop_edge_feature:
+                                self.assertTrue(output.edge['feature'].shape[-1] == tensor.node['feature'].shape[-1])
+
+    def test_ga_conv(self):
+        for i, tensor in enumerate(self.tensors):
+            for drop_edge_feature in [False, True]:
+                if drop_edge_feature:
+                    tensor = tensor.update(
+                        {
+                            'edge': {
+                                'feature': None
+                            }
+                        }
+                    )
+                for skip_connection in [True, False]:
+                    for normalize in [True, False]:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
+                            output = layers.GAConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                            self.assertTrue(output.node['feature'].shape[-1] == 128)
+                            if not drop_edge_feature:
+                                self.assertTrue(output.edge['feature'].shape[-1] == 128)
+
+    def test_mp_conv(self):
+        for i, tensor in enumerate(self.tensors):
+            for drop_edge_feature in [False, True]:
+                if drop_edge_feature:
+                    tensor = tensor.update(
+                        {
+                            'edge': {
+                                'feature': None
+                            }
+                        }
+                    )
+                for skip_connection in [True, False]:
+                    for normalize in [True, False]:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
+                            output = layers.MPConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                            self.assertTrue(output.node['feature'].shape[-1] == 128)
+                            if not drop_edge_feature:
+                                self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
 
     def test_gt_conv(self):
         for i, tensor in enumerate(self.tensors):
-            for skip_connection in [True, False]:
-                for normalize in [True, False]:
-                    with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
-                        output = layers.GTConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
-                        self.assertTrue(output.node['feature'].shape[-1] == 128)
-                        self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
+            for drop_edge_feature in [False, True]:
+                if drop_edge_feature:
+                    tensor = tensor.update(
+                        {
+                            'edge': {
+                                'feature': None
+                            }
+                        }
+                    )
+                for skip_connection in [True, False]:
+                    for normalize in [True, False]:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
+                            output = layers.GTConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                            self.assertTrue(output.node['feature'].shape[-1] == 128)
+                            if not drop_edge_feature:
+                                self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
+                        
+    def test_mp_conv3d(self):
+        for i, tensor in enumerate(self.tensors):
+            tensor = tensor.update(
+                {
+                    'node': {
+                        'coordinate': keras.random.uniform(
+                            shape=(tensor.node['feature'].shape[0], 3), minval=-10, maxval=10)
+                    }
+                }
+            )
+            for drop_edge_feature in [False, True]:
+                if drop_edge_feature:
+                    tensor = tensor.update(
+                        {
+                            'edge': {
+                                'feature': None
+                            }
+                        }
+                    )
+                for skip_connection in [True, False]:
+                    for normalize in [True, False]:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
+                            output = layers.MPConv3D(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                            self.assertTrue(output.node['feature'].shape[-1] == 128)
+                            self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
+                            if not drop_edge_feature:
+                                self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
 
     def test_eg_conv3d(self):
         for i, tensor in enumerate(self.tensors):
@@ -131,13 +217,52 @@ class TestLayer(unittest.TestCase):
                     }
                 }
             )
-            for skip_connection in [True, False]:
-                for normalize in [True, False]:
-                    with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
-                        output = layers.EGConv3D(128, skip_connection=skip_connection, normalize=normalize)(tensor)
-                        self.assertTrue(output.node['feature'].shape[-1] == 128)
-                        self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
-                        self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
+            for drop_edge_feature in [False, True]:
+                if drop_edge_feature:
+                    tensor = tensor.update(
+                        {
+                            'edge': {
+                                'feature': None
+                            }
+                        }
+                    )
+                for skip_connection in [True, False]:
+                    for normalize in [True, False]:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
+                            output = layers.EGConv3D(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                            self.assertTrue(output.node['feature'].shape[-1] == 128)
+                            self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
+                            if not drop_edge_feature:
+                                self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
+
+    def test_gt_conv3d(self):
+        for i, tensor in enumerate(self.tensors):
+            tensor = tensor.update(
+                {
+                    'node': {
+                        'coordinate': keras.random.uniform(
+                            shape=(tensor.node['feature'].shape[0], 3), minval=-10, maxval=10)
+                    }
+                }
+            )
+            for drop_edge_feature in [False, True]:
+                if drop_edge_feature:
+                    tensor = tensor.update(
+                        {
+                            'edge': {
+                                'feature': None
+                            }
+                        }
+                    )
+                for skip_connection in [True, False]:
+                    for normalize in [True, False]:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
+                            output = layers.GTConv3D(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                            self.assertTrue(output.node['feature'].shape[-1] == 128)
+                            self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
+                            if not drop_edge_feature:
+                                self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
+
 
 if __name__ == '__main__':
     unittest.main()
