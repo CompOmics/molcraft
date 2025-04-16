@@ -270,6 +270,19 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         """
         super().load_weights(filepath, *args, **kwargs)
 
+    def embedding(self) -> 'FunctionalGraphModel':
+        model = self
+        if not isinstance(model, FunctionalGraphModel):
+            raise ValueError(
+                'Currently, to extract the embedding part of the model, '
+                'it needs to be a `FunctionalGraphModel`. '
+            )
+        inputs = model.input 
+        for layer in model.layers:
+            if isinstance(layer, layers.Readout):
+                outputs = layer.output 
+        return self.__class__(inputs, outputs, name=f'{self.name}_embedding')
+    
     def train_step(self, tensor: tensors.GraphTensor) -> dict[str, float]:
         y = tensor.context.get('label')
         sample_weight = tensor.context.get('weight')
@@ -381,7 +394,7 @@ def interpret(
 
 def saliency(
     model: GraphModel,
-    graph_tensor: tensors.GraphTensor
+    graph_tensor: tensors.GraphTensor,
 ) -> tensors.GraphTensor:
     x = graph_tensor
     if tensors.is_ragged(x):

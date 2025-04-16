@@ -82,7 +82,11 @@ def segment_mean(
     sorted: bool = False,
 ) -> tf.Tensor:
     if num_segments is None:
-        num_segments = keras.ops.max(segment_ids) + 1
+        num_segments = keras.ops.cond(
+            keras.ops.shape(segment_ids)[0] > 0,
+            lambda: keras.ops.max(segment_ids) + 1,
+            lambda: 0
+        )
     if backend.backend() == 'tensorflow':
         return tf.math.unsorted_segment_mean(
             data=data,

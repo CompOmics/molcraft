@@ -168,4 +168,44 @@ class TestModel(unittest.TestCase):
                 self.assertTrue(isinstance(metrics, list))
                 del model
 
-    
+    def test_interpet(self):
+
+        def get_model(tensor):
+            inputs = layers.Input(tensor.spec)
+            x = layers.NodeEmbedding(32)(inputs)
+            x = layers.EdgeEmbedding(32)(x)
+            x = layers.GTConv(32)(x)
+            x = layers.GTConv(32)(x)
+            x = layers.Readout('sum')(x)
+            outputs = keras.layers.Dense(1)(x)
+            return models.GraphModel(inputs, outputs)
+        
+        for i, tensor in enumerate(self.tensors):
+            with self.subTest(i=i, functional=True):
+                model = get_model(tensor)
+                tensor = models.interpret(model, tensor)
+                self.assertTrue('saliency' in tensor.node)
+
+                tensor = models.saliency(model, tensor)
+                self.assertTrue('feature_saliency' in tensor.node)
+
+    def test_embedding(self):
+
+        units = 32
+
+        def get_model(tensor):
+            inputs = layers.Input(tensor.spec)
+            x = layers.NodeEmbedding(units)(inputs)
+            x = layers.EdgeEmbedding(units)(x)
+            x = layers.GTConv(units)(x)
+            x = layers.GTConv(units)(x)
+            x = layers.Readout('sum')(x)
+            outputs = keras.layers.Dense(1)(x)
+            return models.GraphModel(inputs, outputs)
+        
+        for i, tensor in enumerate(self.tensors):
+            with self.subTest(i=i, functional=True):
+                model = get_model(tensor)
+                out = model.embedding()(tensor)
+                self.assertTrue(out.shape[0] == tensor.context['size'].shape[0])
+                self.assertTrue(out.shape[1] == units)
