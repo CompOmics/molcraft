@@ -7,11 +7,11 @@
 
 ## Highlights
 - Compatible with **Keras 3**
-- Simplified API
-- Fast featurization
-- Modular graph **layers**
-- Serializable graph **featurizers** and **models**
-- Flexible **GraphTensor**
+- Customizable and serializable **featurizers**
+- Customizable and serializable **layers** and **models**
+- Customizable **GraphTensor**
+- Fast and efficient featurization of molecular graphs
+- Efficient and easy-to-use input pipelines using TF **records**
 
 ## Examples 
 
