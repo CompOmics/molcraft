@@ -219,7 +219,7 @@ class MolGraphFeaturizer(Featurizer):
         
         atom_feature = self.atom_features(mol)
         bond_feature = self.bond_features(mol)
-        context_feature = self.context_feature(mol)
+        molecule_feature = self.molecule_feature(mol)
         molecule_size = self.num_atoms(mol)
         
         if isinstance(context, dict):
@@ -241,8 +241,14 @@ class MolGraphFeaturizer(Featurizer):
         else:
             context = {'size': molecule_size}
 
-        if context_feature is not None:
-            context['feature'] = context_feature
+        if molecule_feature is not None:
+            if 'feature' in context:
+                warn(
+                    'Found both inputted and computed context feature. '
+                    'Overwriting inputted context feature with computed '
+                    'context feature (based on `molecule_features`).'
+                )
+            context['feature'] = molecule_feature
 
         node = {}
         node['feature'] = atom_feature
@@ -288,7 +294,7 @@ class MolGraphFeaturizer(Featurizer):
                 edge['feature'] = self._expand_bond_features(
                     mol, paths, bond_feature,
                 )
-            edge['length'] = np.eye(self.radius + 1)[edge['length']]
+            edge['length'] = np.eye(self.radius + 1, dtype=self.feature_dtype)[edge['length']]
 
         if self.super_atom:
             node, edge = self._add_super_atom(node, edge)
@@ -315,13 +321,13 @@ class MolGraphFeaturizer(Featurizer):
         )
         return bond_feature.astype(self.feature_dtype)
     
-    def context_feature(self, mol: chem.Mol) -> np.ndarray:
+    def molecule_feature(self, mol: chem.Mol) -> np.ndarray:
         if self._molecule_features is None:
             return None
-        context_feature: np.ndarray = np.concatenate(
+        molecule_feature: np.ndarray = np.concatenate(
             [f(mol) for f in self._molecule_features], axis=-1
         )
-        return context_feature.astype(self.feature_dtype)
+        return molecule_feature.astype(self.feature_dtype)
 
     def num_atoms(self, mol: chem.Mol) -> np.ndarray:
         return np.asarray(mol.num_atoms, dtype=self.index_dtype)
@@ -361,9 +367,7 @@ class MolGraphFeaturizer(Featurizer):
     ) -> tuple[dict[str, np.ndarray]]:
         num_super_nodes = 1 
         num_nodes = node['feature'].shape[0]
-        node = _add_super_nodes(
-            node, num_super_nodes, self.feature_dtype
-        )
+        node = _add_super_nodes(node, num_super_nodes)
         edge = _add_super_edges(
             edge, num_nodes, num_super_nodes, self.feature_dtype, self.index_dtype
         )
@@ -544,7 +548,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
                 'of the `Featurizer` or input a 3D representation of the molecule. '
             )
 
-        context_feature = self.context_feature(mol)
+        molecule_feature = self.molecule_feature(mol)
         molecule_size = self.num_atoms(mol) + int(self.super_atom)
 
         if isinstance(context, dict):
@@ -566,8 +570,14 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         else:
             context = {'size': molecule_size}
 
-        if context_feature is not None:
-            context['feature'] = context_feature
+        if molecule_feature is not None:
+            if 'feature' in context:
+                warn(
+                    'Found both inputted and computed context feature. '
+                    'Overwriting inputted context feature with computed '
+                    'context feature (based on `molecule_features`).'
+                )
+            context['feature'] = molecule_feature
             
         node = {}
         node['feature'] = self.atom_features(mol)
@@ -604,7 +614,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
                 )
                 node_conformer['coordinate'] = np.concatenate(
                     [node_conformer['coordinate'], conformer.centroid[None]], axis=0
-                )
+                ).astype(self.feature_dtype)
             tensor_list.append(
                 tensors.GraphTensor(context, node_conformer, edge_conformer)
             )
@@ -670,12 +680,15 @@ def load_featurizer(
 def _add_super_nodes(
     node: dict[str, np.ndarray], 
     num_super_nodes: int = 1,
-    feature_dtype: str = 'float32',
 ) -> dict[str, np.ndarray]:
     node = copy.deepcopy(node)
-    node['super'] = np.array([False] * len(node['feature']) + [True] * num_super_nodes)
+    node['super'] = np.array(
+        [False] * len(node['feature']) + [True] * num_super_nodes,
+        dtype=np.bool
+    )
     super_node_feature = np.zeros(
-        [num_super_nodes, node['feature'].shape[-1]], dtype=feature_dtype
+        [num_super_nodes, node['feature'].shape[-1]], 
+        dtype=node['feature'].dtype
     )
     node['feature'] = np.concatenate([node['feature'], super_node_feature])
     return node 
@@ -695,31 +708,38 @@ def _add_super_edges(
         np.tile(np.arange(num_nodes), [num_super_nodes])
     )
     edge['source'] = np.concatenate(
-        [
-            edge['source'], 
-            node_indices,
-            super_node_indices,
-        ]
-    )
-    edge['source'] = edge['source'].astype(index_dtype)
+        [edge['source'], node_indices, super_node_indices]
+    ).astype(index_dtype)
+   
     edge['target'] = np.concatenate(
-        [
-            edge['target'], 
-            super_node_indices, 
-            node_indices
-        ]
-    )
-    edge['target'] = edge['target'].astype(index_dtype)
+        [edge['target'], super_node_indices, node_indices]
+    ).astype(index_dtype)
+
     if 'feature' in edge:
-        edge['super'] = np.asarray([False] * edge['feature'].shape[0] + [True] * (num_super_nodes * num_nodes * 2))
-        edge['feature'] = np.concatenate([edge['feature'], np.zeros((num_super_nodes * num_nodes * 2, edge['feature'].shape[-1]))])
+        num_edges = int(edge['feature'].shape[0])
+        num_super_edges = int(num_super_nodes * num_nodes * 2)
+        edge['super'] = np.asarray(
+            ([False] * num_edges + [True] * num_super_edges),
+            dtype=np.bool
+        )
+        edge['feature'] = np.concatenate(
+            [
+                edge['feature'], 
+                np.zeros(
+                    shape=(num_super_edges, edge['feature'].shape[-1]),
+                    dtype=edge['feature'].dtype
+                )
+            ]
+        )
+
     if 'length' in edge:
         edge['length'] = np.pad(edge['length'], [(0, 0), (1, 0)])
-        zero_array = np.zeros((num_nodes * num_super_nodes * 2,), dtype='int32')
+        zero_array = np.zeros([num_nodes * num_super_nodes * 2], dtype='int32')
         edge_length_dim = edge['length'].shape[1]
         virtual_edge_length = np.eye(edge_length_dim)[zero_array]
         edge['length'] = np.concatenate([edge['length'], virtual_edge_length])
         edge['length'] = edge['length'].astype(feature_dtype)
+
     return edge
 
     

@@ -53,6 +53,10 @@ class TestFeaturizer(unittest.TestCase):
             graph = featurizer(smiles)
             self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
             self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
+            self.assertEqual(graph.node['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['source'].dtype.name, 'int32')
+            self.assertEqual(graph.edge['target'].dtype.name, 'int32')
 
         smiles = self._smiles_two_molecules
         num_nodes = (5 + 1) + (11 + 1)
@@ -61,7 +65,48 @@ class TestFeaturizer(unittest.TestCase):
             graph = featurizer(smiles)
             self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
             self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
+            self.assertEqual(graph.node['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['source'].dtype.name, 'int32')
+            self.assertEqual(graph.edge['target'].dtype.name, 'int32')
         
+        smiles = self._smiles_no_atom 
+        num_nodes = (0 + 1)
+        num_edges = (0 + 0 * 2)
+        with self.subTest(smiles=smiles):
+            graph = featurizer(smiles)
+            self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
+            self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
+            self.assertEqual(graph.node['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['source'].dtype.name, 'int32')
+            self.assertEqual(graph.edge['target'].dtype.name, 'int32')
+
+        smiles = self._smiles_single_atom 
+        num_nodes = (1 + 1)
+        num_edges = (0 + 1 * 2)
+        with self.subTest(smiles=smiles):
+            graph = featurizer(smiles)
+            self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
+            self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
+            self.assertEqual(graph.node['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['source'].dtype.name, 'int32')
+            self.assertEqual(graph.edge['target'].dtype.name, 'int32')
+
+        smiles = self._smiles_single_hs_atom 
+        num_nodes = (1 + 1)
+        num_edges = (0 + 1 * 2)
+        with self.subTest(smiles=smiles):
+            graph = featurizer(smiles)
+            self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
+            self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
+            self.assertEqual(graph.node['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['source'].dtype.name, 'int32')
+            self.assertEqual(graph.edge['target'].dtype.name, 'int32')
+
+
     def test_mol_featurizer3d(self):
         
         num_conformers = 5
@@ -95,7 +140,11 @@ class TestFeaturizer(unittest.TestCase):
             self.assertEqual(graph.node['coordinate'].shape, (num_nodes, 3))
             self.assertGreaterEqual(graph.edge['feature'].shape[0], num_edges)
             self.assertEqual(graph.edge['feature'].shape[-1], edge_dim)
-            
+            self.assertEqual(graph.node['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['source'].dtype.name, 'int32')
+            self.assertEqual(graph.edge['target'].dtype.name, 'int32')
+
         smiles = self._smiles_two_molecules
         num_nodes = ((5 + 1) + (11 + 1)) * num_conformers
         num_edges = ((8 + 5 * 2) + (22 + 11 * 2)) * num_conformers
@@ -105,7 +154,38 @@ class TestFeaturizer(unittest.TestCase):
             self.assertEqual(graph.node['coordinate'].shape, (num_nodes, 3))
             self.assertGreaterEqual(graph.edge['feature'].shape[0], num_edges)
             self.assertEqual(graph.edge['feature'].shape[-1], edge_dim)
-            
+            self.assertEqual(graph.node['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['source'].dtype.name, 'int32')
+            self.assertEqual(graph.edge['target'].dtype.name, 'int32')
+
+        smiles = self._smiles_single_atom 
+        num_nodes = (1 + 1) * num_conformers
+        num_edges = (0 + 1 * 2) * num_conformers
+        with self.subTest(smiles=smiles):
+            graph = featurizer(smiles)
+            self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
+            self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
+            self.assertEqual(graph.node['coordinate'].shape, (num_nodes, 3))
+            self.assertEqual(graph.node['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['source'].dtype.name, 'int32')
+            self.assertEqual(graph.edge['target'].dtype.name, 'int32')
+
+        smiles = self._smiles_single_hs_atom 
+        num_nodes = (1 + 1) * num_conformers
+        num_edges = (0 + 1 * 2) * num_conformers
+        with self.subTest(smiles=smiles):
+            graph = featurizer(smiles)
+            self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
+            self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
+            self.assertEqual(graph.node['coordinate'].shape, (num_nodes, 3))
+            self.assertEqual(graph.node['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['feature'].dtype.name, 'float32')
+            self.assertEqual(graph.edge['source'].dtype.name, 'int32')
+            self.assertEqual(graph.edge['target'].dtype.name, 'int32')
+
+
 
 if __name__ == '__main__':
     unittest.main()
