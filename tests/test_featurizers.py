@@ -37,6 +37,7 @@ class TestFeaturizer(unittest.TestCase):
                 features.BondType({'single', 'double', 'aromatic'}),
                 features.IsRotatable(),
             ],
+            molecule_features='auto',
             super_atom=True,
             radius=1, 
             self_loops=False,
@@ -51,6 +52,7 @@ class TestFeaturizer(unittest.TestCase):
         num_edges = (8 + 5 * 2)
         with self.subTest(smiles=smiles):
             graph = featurizer(smiles)
+            self.assertEqual(graph.context['feature'].shape, (1, 10))
             self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
             self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
             self.assertEqual(graph.node['feature'].dtype.name, 'float32')
@@ -63,6 +65,7 @@ class TestFeaturizer(unittest.TestCase):
         num_edges = (8 + 5 * 2) + (22 + 11 * 2)
         with self.subTest(smiles=smiles):
             graph = featurizer(smiles)
+            self.assertEqual(graph.context['feature'].shape, (2, 10))
             self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
             self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
             self.assertEqual(graph.node['feature'].dtype.name, 'float32')
@@ -75,6 +78,7 @@ class TestFeaturizer(unittest.TestCase):
         num_edges = (0 + 0 * 2)
         with self.subTest(smiles=smiles):
             graph = featurizer(smiles)
+            self.assertEqual(graph.context['feature'].shape, (1, 10))
             self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
             self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
             self.assertEqual(graph.node['feature'].dtype.name, 'float32')
@@ -87,6 +91,7 @@ class TestFeaturizer(unittest.TestCase):
         num_edges = (0 + 1 * 2)
         with self.subTest(smiles=smiles):
             graph = featurizer(smiles)
+            self.assertEqual(graph.context['feature'].shape, (1, 10))
             self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
             self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
             self.assertEqual(graph.node['feature'].dtype.name, 'float32')
@@ -99,6 +104,7 @@ class TestFeaturizer(unittest.TestCase):
         num_edges = (0 + 1 * 2)
         with self.subTest(smiles=smiles):
             graph = featurizer(smiles)
+            self.assertEqual(graph.context['feature'].shape, (1, 10))
             self.assertEqual(graph.node['feature'].shape, (num_nodes, node_dim))
             self.assertEqual(graph.edge['feature'].shape, (num_edges, edge_dim))
             self.assertEqual(graph.node['feature'].dtype.name, 'float32')

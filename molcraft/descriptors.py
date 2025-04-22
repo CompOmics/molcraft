@@ -1,6 +1,6 @@
 import keras
 import numpy as np
-from rdkit.Chem import Descriptors
+from rdkit.Chem import rdMolDescriptors
 
 from molcraft import chem
 from molcraft import features
@@ -44,47 +44,59 @@ class Descriptor(features.Feature):
 @keras.saving.register_keras_serializable(package='molcraft')
 class MolWeight(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
-        return Descriptors.MolWt(mol) 
+        return rdMolDescriptors.CalcExactMolWt(mol) 
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class MolTPSA(Descriptor):
+class TPSA(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
-        return Descriptors.TPSA(mol)
+        return rdMolDescriptors.CalcTPSA(mol)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class MolLogP(Descriptor):
+class CrippenLogP(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
-        return Descriptors.MolLogP(mol)
+        return rdMolDescriptors.CalcCrippenDescriptors(mol)[0]
+    
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class CrippenMolarRefractivity(Descriptor):
+    def call(self, mol: chem.Mol) -> np.ndarray:
+        return rdMolDescriptors.CalcCrippenDescriptors(mol)[1]
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class NumHeavyAtoms(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
-        return Descriptors.HeavyAtomCount(mol)
+        return rdMolDescriptors.CalcNumHeavyAtoms(mol)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
+class NumHeteroAtoms(Descriptor):
+    def call(self, mol: chem.Mol) -> np.ndarray:
+        return rdMolDescriptors.CalcNumHeteroatoms(mol) 
+    
+    
+@keras.saving.register_keras_serializable(package='molcraft')
 class NumHydrogenDonors(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
-        return Descriptors.NumHDonors(mol) 
+        return rdMolDescriptors.CalcNumHBD(mol) 
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class NumHydrogenAcceptors(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
-        return Descriptors.NumHAcceptors(mol) 
-
+        return rdMolDescriptors.CalcNumHBA(mol) 
+    
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class NumRotatableBonds(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
-        return Descriptors.NumRotatableBonds(mol) 
+        return rdMolDescriptors.CalcNumRotatableBonds(mol) 
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class NumRings(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
-        return Descriptors.RingCount(mol) 
+        return rdMolDescriptors.CalcNumRings(mol) 
 

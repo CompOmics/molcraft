@@ -186,9 +186,11 @@ class MolGraphFeaturizer(Featurizer):
         if default_molecule_features:
             molecule_features = [
                 descriptors.MolWeight(),
-                descriptors.MolTPSA(),
-                descriptors.MolLogP(),
+                descriptors.TPSA(),
+                descriptors.CrippenLogP(),
+                descriptors.CrippenMolarRefractivity(),
                 descriptors.NumHeavyAtoms(),
+                descriptors.NumHeteroAtoms(),
                 descriptors.NumHydrogenDonors(),
                 descriptors.NumHydrogenAcceptors(),
                 descriptors.NumRotatableBonds(),
