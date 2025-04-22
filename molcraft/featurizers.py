@@ -599,7 +599,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
                 radius=self.radius, 
                 sparse=False, 
                 self_loops=self.self_loops, 
-                dtype=np.bool
+                dtype=bool
             )
             edge_conformer['source'], edge_conformer['target'] = np.where(adjacency_matrix)
             edge_conformer['source'] = edge_conformer['source'].astype(self.index_dtype)
@@ -686,7 +686,7 @@ def _add_super_nodes(
     node = copy.deepcopy(node)
     node['super'] = np.array(
         [False] * len(node['feature']) + [True] * num_super_nodes,
-        dtype=np.bool
+        dtype=bool
     )
     super_node_feature = np.zeros(
         [num_super_nodes, node['feature'].shape[-1]], 
@@ -722,7 +722,7 @@ def _add_super_edges(
         num_super_edges = int(num_super_nodes * num_nodes * 2)
         edge['super'] = np.asarray(
             ([False] * num_edges + [True] * num_super_edges),
-            dtype=np.bool
+            dtype=bool
         )
         edge['feature'] = np.concatenate(
             [
