@@ -8,9 +8,6 @@ from molcraft import features
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class Descriptor(features.Feature):
-    def __init__(self, scale: float | None = None, **kwargs):
-        super().__init__(**kwargs)
-        self.scale = scale 
 
     def __call__(self, mol: chem.Mol) -> np.ndarray:
         if not isinstance(mol, chem.Mol):
@@ -24,21 +21,13 @@ class Descriptor(features.Feature):
             self._featurize_categorical if self.vocab else 
             self._featurize_floating
         )
-        scale_value = self.scale and not self.vocab
         if not isinstance(descriptor, (tuple, list, np.ndarray)):
             descriptor = [descriptor]
         
         descriptors = []
         for value in descriptor:
-            if scale_value:
-                value /= self.scale 
             descriptors.append(func(value))
         return np.concatenate(descriptors)
-    
-    def get_config(self):
-        config = super().get_config()
-        config['scale'] = self.scale 
-        return config 
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
