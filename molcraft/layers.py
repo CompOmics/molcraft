@@ -1617,7 +1617,8 @@ class ContextProjection(Projection):
     """Context projection layer.
     """
     def __init__(self, units: int = None, activation: str = None, **kwargs):
-        super().__init__(units=units, activation=activation, field='context', **kwargs)
+        kwargs['field'] = 'context'
+        super().__init__(units=units, activation=activation, **kwargs)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -1625,7 +1626,8 @@ class NodeProjection(Projection):
     """Node projection layer.
     """
     def __init__(self, units: int = None, activation: str = None, **kwargs):
-        super().__init__(units=units, activation=activation, field='node', **kwargs)
+        kwargs['field'] = 'node'
+        super().__init__(units=units, activation=activation, **kwargs)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -1633,7 +1635,8 @@ class EdgeProjection(Projection):
     """Edge projection layer.
     """
     def __init__(self, units: int = None, activation: str = None, **kwargs):
-        super().__init__(units=units, activation=activation, field='edge', **kwargs)
+        kwargs['field'] = 'edge'
+        super().__init__(units=units, activation=activation, **kwargs)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
