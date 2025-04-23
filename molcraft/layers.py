@@ -1306,23 +1306,23 @@ class GraphNetwork(GraphLayer):
         """
         units = self.layers[0].units 
         node_feature_dim = spec.node['feature'].shape[-1]
-        if node_feature_dim != units:
+        self._update_node_feature = node_feature_dim != units 
+        if self._update_node_feature:
             warn(
                 'Node feature dim does not match `units` of the first layer. '
                 'Automatically adding a node projection layer to match `units`.'
             )
             self._node_dense = self.get_dense(units)
-            self._update_node_feature = True 
-        has_edge_feature = 'feature' in spec.edge 
-        if has_edge_feature:
+        self._has_edge_feature = 'feature' in spec.edge 
+        if self._has_edge_feature:
             edge_feature_dim = spec.edge['feature'].shape[-1]
-            if edge_feature_dim != units:
+            self._update_edge_feature = edge_feature_dim != units
+            if self._update_edge_feature:
                 warn(
                     'Edge feature dim does not match `units` of the first layer. '
                     'Automatically adding a edge projection layer to match `units`.'
                 )
                 self._edge_dense = self.get_dense(units)
-                self._update_edge_feature = True
         self.built = True
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
@@ -1331,7 +1331,7 @@ class GraphNetwork(GraphLayer):
         x = tensors.to_dict(tensor)
         if self._update_node_feature:
             x['node']['feature'] = self._node_dense(tensor.node['feature'])
-        if self._update_edge_feature:
+        if self._has_edge_feature and self._update_edge_feature:
             x['edge']['feature'] = self._edge_dense(tensor.edge['feature'])
         outputs = [x['node']['feature']]
         for layer in self.layers:
