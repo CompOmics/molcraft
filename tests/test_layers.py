@@ -114,10 +114,10 @@ class TestLayer(unittest.TestCase):
                             }
                         }
                     )
-                for skip_connection in [True, False]:
-                    for normalize in [True, False]:
-                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
-                            output = layers.GIConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                for skip_connection in [True, False, 'weighted']:
+                    for normalization in [True, False, 'batch']:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalization=normalization, flat=True):
+                            output = layers.GIConv(128, skip_connection=skip_connection, normalization=normalization)(tensor)
                             self.assertTrue(output.node['feature'].shape[-1] == 128)
                             if not drop_edge_feature:
                                 self.assertTrue(output.edge['feature'].shape[-1] == tensor.node['feature'].shape[-1])
@@ -133,10 +133,10 @@ class TestLayer(unittest.TestCase):
                             }
                         }
                     )
-                for skip_connection in [True, False]:
-                    for normalize in [True, False]:
-                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
-                            output = layers.GAConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                for skip_connection in [True, False, 'weighted']:
+                    for normalization in [True, False, 'batch']:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalization=normalization, flat=True):
+                            output = layers.GAConv(128, skip_connection=skip_connection, normalization=normalization)(tensor)
                             self.assertTrue(output.node['feature'].shape[-1] == 128)
                             if not drop_edge_feature:
                                 self.assertTrue(output.edge['feature'].shape[-1] == 128)
@@ -152,10 +152,10 @@ class TestLayer(unittest.TestCase):
                             }
                         }
                     )
-                for skip_connection in [True, False]:
-                    for normalize in [True, False]:
-                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
-                            output = layers.MPConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                for skip_connection in [True, False, 'weighted']:
+                    for normalization in [True, False, 'batch']:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalization=normalization, flat=True):
+                            output = layers.MPConv(128, skip_connection=skip_connection, normalization=normalization)(tensor)
                             self.assertTrue(output.node['feature'].shape[-1] == 128)
                             if not drop_edge_feature:
                                 self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
@@ -171,10 +171,10 @@ class TestLayer(unittest.TestCase):
                             }
                         }
                     )
-                for skip_connection in [True, False]:
-                    for normalize in [True, False]:
-                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
-                            output = layers.GTConv(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                for skip_connection in [True, False, 'weighted']:
+                    for normalization in [True, False, 'batch']:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalization=normalization, flat=True):
+                            output = layers.GTConv(128, skip_connection=skip_connection, normalization=normalization)(tensor)
                             self.assertTrue(output.node['feature'].shape[-1] == 128)
                             if not drop_edge_feature:
                                 self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
@@ -198,10 +198,10 @@ class TestLayer(unittest.TestCase):
                             }
                         }
                     )
-                for skip_connection in [True, False]:
-                    for normalize in [True, False]:
-                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
-                            output = layers.MPConv3D(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                for skip_connection in [True, False, 'weighted']:
+                    for normalization in [True, False, 'batch']:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalization=normalization, flat=True):
+                            output = layers.MPConv3D(128, skip_connection=skip_connection, normalization=normalization)(tensor)
                             self.assertTrue(output.node['feature'].shape[-1] == 128)
                             self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
                             if not drop_edge_feature:
@@ -226,10 +226,10 @@ class TestLayer(unittest.TestCase):
                             }
                         }
                     )
-                for skip_connection in [True, False]:
-                    for normalize in [True, False]:
-                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
-                            output = layers.EGConv3D(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                for skip_connection in [True, False, 'weighted']:
+                    for normalization in [True, False, 'batch']:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalization=normalization, flat=True):
+                            output = layers.EGConv3D(128, skip_connection=skip_connection, normalization=normalization)(tensor)
                             self.assertTrue(output.node['feature'].shape[-1] == 128)
                             self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
                             if not drop_edge_feature:
@@ -254,10 +254,10 @@ class TestLayer(unittest.TestCase):
                             }
                         }
                     )
-                for skip_connection in [True, False]:
-                    for normalize in [True, False]:
-                        with self.subTest(i=i, skip_connection=skip_connection, normalize=normalize, flat=True):
-                            output = layers.GTConv3D(128, skip_connection=skip_connection, normalize=normalize)(tensor)
+                for skip_connection in [True, False, 'weighted']:
+                    for normalization in [True, False, 'batch']:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalization=normalization, flat=True):
+                            output = layers.GTConv3D(128, skip_connection=skip_connection, normalization=normalization)(tensor)
                             self.assertTrue(output.node['feature'].shape[-1] == 128)
                             self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
                             if not drop_edge_feature:

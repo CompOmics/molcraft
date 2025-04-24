@@ -7,9 +7,6 @@ from keras.src.models import functional
 from molcraft import tensors
 from molcraft import ops 
 
-# TODO: Make normalization False by default, for subclassed layers. Also, let subclassed layers use
-#       normalization of base layer.
-
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class GraphLayer(keras.layers.Layer):
@@ -205,22 +202,23 @@ class GraphConv(GraphLayer):
 
     """Base graph neural network layer.
 
-    For normalization and skip connection to work, the `GraphConv` subclass 
-    requires the (node feature) output of `aggregate` and `update` to have a 
-    dimension of `self.units`, respectively. 
+    For normalization and skip connection to work, the `GraphConv` subclass requires 
+    final node feature output dimemnsion to be equal to `units`. 
 
     Args:
         units:
-            The number of units.
-        normalize:
-            Whether `LayerNormalization` should be applied to the (node feature) output 
-            of the `aggregate` step. While normalization is recommended, it is not used 
-            by default.
+            The number of units. The final node feature output (output of the `update` method)
+            should have a dimension equal to `units`.
+        normalization:
+            Whether `LayerNormalization` should be applied to the final node feature output.
+            By default set to `False`. To use `BatchNormalization`, specify `batch_norm`.
         skip_connection:
-            Whether (node feature) input should be added to the (node feature) output. 
-            If (node feature) input dim is not equal to `units`, a projection layer will 
-            automatically project the residual before adding it to the output. While skip 
-            connection is recommended, it is not used by default. 
+            Whether node feature input should be added to the node feature output. 
+            If node feature input dim is not equal to `units` (node feature output dim), 
+            a projection layer will automatically project the residual before adding it 
+            to the output. By default set to `True`. To use weighted skip connection, 
+            specify `weighted`. The weight multiplied with the skip connection is a 
+            learnable scalar.
         kwargs:
             See arguments of `GraphLayer`.
     """
@@ -228,14 +226,18 @@ class GraphConv(GraphLayer):
     def __init__(
         self, 
         units: int = None, 
-        normalize: bool = False,
-        skip_connection: bool = False, 
+        normalization: bool | str = False,
+        skip_connection: bool | str = True, 
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
-        self.units = units
-        self._normalize_aggregate = normalize
+        self._units = units
+        self._normalization = normalization
         self._skip_connection = skip_connection
+    
+    @property 
+    def units(self):
+        return self._units 
     
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         if not self.units:
@@ -256,11 +258,26 @@ class GraphConv(GraphLayer):
             self._residual_projection = self.get_dense(
                 self.units, name='residual_projection'
             )
-        if self._normalize_aggregate:
-            self._aggregation_norm = keras.layers.LayerNormalization(
-                name='aggregation_normalization'
+
+        self._use_weighted_skip_connection = str(self._skip_connection).lower().startswith('weight')
+        if self._use_weighted_skip_connection:
+            self._skip_connection_weight = self.add_weight(
+                name='skip_connection_weight', 
+                shape=(), 
+                initializer='ones',
+                trainable=True,
             )
-            self._aggregation_norm.build([None, self.units])
+
+        if self._normalization:
+            if str(self._normalization).lower().startswith('batch'):
+                self._output_norm = keras.layers.BatchNormalization(
+                    name='output_batch_norm'
+                )
+            else:
+                self._output_norm = keras.layers.LayerNormalization(
+                    name='output_layer_norm'
+                )
+            self._output_norm.build([None, self.units])
 
         super().build(spec)
 
@@ -316,30 +333,25 @@ class GraphConv(GraphLayer):
 
         tensor = self.message(tensor)
         tensor = self.aggregate(tensor)
-
-        if self._normalize_aggregate:
-            normalized_node_feature = self._aggregation_norm(tensor.node['feature'])
-            tensor = tensor.update({'node': {'feature': normalized_node_feature}})
-
         tensor = self.update(tensor)
 
-        if not self._skip_connection:
-            return tensor
-        
         updated_node_feature = tensor.node['feature']
-        return tensor.update(
-            {
-                'node': {
-                    'feature': updated_node_feature + input_node_feature
-                }
-            }
-        )
+
+        if self._skip_connection:
+            if self._use_weighted_skip_connection:
+                input_node_feature *= self._skip_connection_weight
+            updated_node_feature += input_node_feature
+        
+        if self._normalization:
+            updated_node_feature = self._output_norm(updated_node_feature)
+
+        return tensor.update({'node': {'feature': updated_node_feature}})
 
     def get_config(self) -> dict:
         config = super().get_config()
         config.update({
             'units': self.units,
-            'normalize': self._normalize_aggregate,
+            'normalization': self._normalization,
             'skip_connection': self._skip_connection,
         })
         return config
@@ -356,14 +368,14 @@ class GIConv(GraphConv):
         units: int,
         activation: keras.layers.Activation | str | None = 'relu',
         use_bias: bool = True,
-        normalize: bool = False,
+        normalization: bool = False,
         dropout: float = 0.0,
         update_edge_feature: bool = True,
         **kwargs,
     ):
         super().__init__(
             units=units, 
-            normalize=normalize, 
+            normalization=normalization, 
             use_bias=use_bias, 
             **kwargs
         )
@@ -401,12 +413,11 @@ class GIConv(GraphConv):
                 self._edge_dense.build([None, edge_feature_dim])
         else:
             self._update_edge_feature = False
-                
-        self._feedforward_intermediate_dense = self.get_dense(self.units)
-        self._feedforward_intermediate_dense.build([None, node_feature_dim])
 
         has_overridden_update = self.__class__.update != GIConv.update 
         if not has_overridden_update:
+            self._feedforward_intermediate_dense = self.get_dense(self.units)
+            self._feedforward_intermediate_dense.build([None, node_feature_dim])
             self._feedforward_activation = self._activation
             self._feedforward_dropout = keras.layers.Dropout(self._dropout)
             self._feedforward_output_dense = self.get_dense(self.units)
@@ -437,7 +448,6 @@ class GIConv(GraphConv):
         """
         node_feature = tensor.aggregate('message', mode='mean')
         node_feature += (1 + self.epsilon) * tensor.node['feature']
-        node_feature = self._feedforward_intermediate_dense(node_feature)
         return tensor.update(
             {
                 'node': {
@@ -453,6 +463,7 @@ class GIConv(GraphConv):
         """Updates nodes. 
         """
         node_feature = tensor.node['feature']
+        node_feature = self._feedforward_intermediate_dense(node_feature)
         node_feature = self._feedforward_activation(node_feature)
         node_feature = self._feedforward_dropout(node_feature)
         node_feature = self._feedforward_output_dense(node_feature)
@@ -486,7 +497,7 @@ class GAConv(GraphConv):
         heads: int = 8,
         activation: keras.layers.Activation | str | None = "relu",
         use_bias: bool = True,
-        normalize: bool = False,
+        normalization: bool = False,
         dropout: float = 0.0,
         update_edge_feature: bool = True,
         attention_activation: keras.layers.Activation | str | None = "leaky_relu",
@@ -495,7 +506,7 @@ class GAConv(GraphConv):
         kwargs['skip_connection'] = False
         super().__init__(
             units=units, 
-            normalize=normalize, 
+            normalization=normalization, 
             use_bias=use_bias,
             **kwargs
         )
@@ -505,7 +516,6 @@ class GAConv(GraphConv):
         self._head_units = self.units // self.heads 
         self._activation = keras.activations.get(activation)
         self._dropout = dropout
-        self._normalize = normalize
         self._update_edge_feature = update_edge_feature
         self._attention_activation = keras.activations.get(attention_activation)
 
@@ -553,6 +563,7 @@ class GAConv(GraphConv):
             'ij,jkh->ikh', (self.head_units, self.heads)
         )
         self._node_self_dense.build([None, node_feature_dim])
+
         self._dropout_layer = keras.layers.Dropout(self._dropout)
 
         self.built = True
@@ -651,15 +662,14 @@ class GTConv(GraphConv):
         heads: int = 8,
         activation: keras.layers.Activation | str | None = "relu",
         use_bias: bool = True,
-        normalize: bool = False,
+        normalization: bool = False,
         dropout: float = 0.0,
         attention_dropout: float = 0.0,
         **kwargs,
     ) -> None:
-        kwargs['skip_connection'] = False
         super().__init__(
             units=units, 
-            normalize=normalize, 
+            normalization=normalization, 
             use_bias=use_bias,
             **kwargs
         )
@@ -670,7 +680,6 @@ class GTConv(GraphConv):
         self._activation = keras.activations.get(activation)
         self._dropout = dropout
         self._attention_dropout = attention_dropout
-        self._normalize = normalize
 
     @property 
     def heads(self):
@@ -684,16 +693,6 @@ class GTConv(GraphConv):
         """Builds the layer.
         """
         node_feature_dim = spec.node['feature'].shape[-1]
-        self.project_residual = node_feature_dim != self.units
-        if self.project_residual:
-            warn(
-                '`GTConv` uses residual connections, but found incompatible dim ' 
-                'between input (node feature dim) and output (`self.units`). '
-                'Automatically applying a projection layer to residual to '
-                'match input and output. '
-            )   
-            self._residual_dense = self.get_dense(self.units)
-            self._residual_dense.build([None, node_feature_dim])
             
         self._query_dense = self.get_einsum_dense(
             'ij,jkh->ikh', (self.head_units, self.heads)
@@ -725,16 +724,9 @@ class GTConv(GraphConv):
 
         has_overridden_update = self.__class__.update != GTConv.update 
         if not has_overridden_update:
-            
-            if self._normalize:
-                self._feedforward_output_norm = keras.layers.LayerNormalization()
-                self._feedforward_output_norm.build([None, self.units])
-
             self._feedforward_dropout = keras.layers.Dropout(self._dropout)
-
             self._feedforward_intermediate_dense = self.get_dense(self.units)
             self._feedforward_intermediate_dense.build([None, self.units])
-
             self._feedforward_output_dense = self.get_dense(self.units)
             self._feedforward_output_dense.build([None, self.units])
 
@@ -804,22 +796,10 @@ class GTConv(GraphConv):
         """Updates nodes. 
         """
         node_feature = tensor.node['feature']
-
-        residual = tensor.node['residual']
-        if self.project_residual:
-            residual = self._residual_dense(residual)
-
-        node_feature += residual
-        residual = node_feature
-
         node_feature = self._feedforward_intermediate_dense(node_feature)
         node_feature = self._activation(node_feature)
         node_feature = self._feedforward_output_dense(node_feature)
         node_feature = self._feedforward_dropout(node_feature)
-        if self._normalize:
-            node_feature = self._feedforward_output_norm(node_feature)
-
-        node_feature += residual
 
         return tensor.update(
             {
@@ -948,13 +928,13 @@ class MPConv(GraphConv):
         units: int = 128, 
         activation: keras.layers.Activation | str | None = None, 
         use_bias: bool = True,
-        normalize: bool = False,
+        normalization: bool = False,
         dropout: float = 0.0,
         **kwargs
     ) -> None:
         super().__init__(
             units=units, 
-            normalize=normalize, 
+            normalization=normalization, 
             use_bias=use_bias,
             **kwargs
         )
@@ -1087,13 +1067,13 @@ class EGConv3D(GraphConv):
         units: int = 128, 
         activation: keras.layers.Activation | str | None = None, 
         use_bias: bool = True,
-        normalize: bool = False,
+        normalization: bool = False,
         dropout: float = 0.0,
         **kwargs
     ) -> None:
         super().__init__(
             units=units, 
-            normalize=normalize, 
+            normalization=normalization, 
             use_bias=use_bias,
             **kwargs
         )
@@ -1417,14 +1397,14 @@ class NodeEmbedding(GraphLayer):
     def __init__(
         self, 
         dim: int = None, 
-        normalize: bool = False,
+        normalization: bool = False,
         embed_context: bool = True,
         allow_masking: bool = True, 
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self.dim = dim
-        self._normalize = normalize
+        self._normalization = normalization
         self._embed_context = embed_context
         self._masking_rate = None
         self._allow_masking = allow_masking
@@ -1452,8 +1432,15 @@ class NodeEmbedding(GraphLayer):
             self._context_dense = self.get_dense(self.dim)
             self._context_dense.build([None, context_feature_dim])
         
-        if self._normalize:
-            self._norm = keras.layers.LayerNormalization()
+        if self._normalization:
+            if str(self._normalization).lower().startswith('batch'):
+                self._norm = keras.layers.BatchNormalization(
+                    name='output_batch_norm'
+                )
+            else:
+                self._norm = keras.layers.LayerNormalization(
+                    name='output_layer_norm'
+                )
             self._norm.build([None, self.dim])
 
         self.built = True
@@ -1490,7 +1477,7 @@ class NodeEmbedding(GraphLayer):
             # Slience warning of 'no gradients for variables'
             feature = feature + (self._mask_feature * 0.0)
 
-        if self._normalize:
+        if self._normalization:
             feature = self._norm(feature)
 
         return tensor.update({'node': {'feature': feature}})
@@ -1512,7 +1499,7 @@ class NodeEmbedding(GraphLayer):
         config = super().get_config()
         config.update({
             'dim': self.dim,
-            'normalize': self._normalize,
+            'normalization': self._normalization,
             'embed_context': self._embed_context,
             'allow_masking': self._allow_masking
         })
@@ -1530,13 +1517,13 @@ class EdgeEmbedding(GraphLayer):
     def __init__(
         self, 
         dim: int = None, 
-        normalize: bool = False,
+        normalization: bool = False,
         allow_masking: bool = True, 
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self.dim = dim
-        self._normalize = normalize
+        self._normalization = normalization
         self._masking_rate = None
         self._allow_masking = allow_masking
 
@@ -1554,8 +1541,16 @@ class EdgeEmbedding(GraphLayer):
             self._super_feature = self.get_weight(shape=[self.dim], name='super_edge_feature')
         if self._allow_masking:
             self._mask_feature = self.get_weight(shape=[self.dim], name='mask_edge_feature')
-        if self._normalize:
-            self._norm = keras.layers.LayerNormalization()
+
+        if self._normalization:
+            if str(self._normalization).lower().startswith('batch'):
+                self._norm = keras.layers.BatchNormalization(
+                    name='output_batch_norm'
+                )
+            else:
+                self._norm = keras.layers.LayerNormalization(
+                    name='output_layer_norm'
+                )
             self._norm.build([None, self.dim])
 
         self.built = True
@@ -1587,7 +1582,7 @@ class EdgeEmbedding(GraphLayer):
             # Slience warning of 'no gradients for variables'
             feature = feature + (self._mask_feature * 0.0)
 
-        if self._normalize:
+        if self._normalization:
             feature = self._norm(feature)
 
         return tensor.update({'edge': {'feature': feature}})
@@ -1609,7 +1604,7 @@ class EdgeEmbedding(GraphLayer):
         config = super().get_config()
         config.update({
             'dim': self.dim,
-            'normalize': self._normalize,
+            'normalization': self._normalization,
             'allow_masking': self._allow_masking
         })
         return config
