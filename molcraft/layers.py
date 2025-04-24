@@ -39,9 +39,6 @@ class GraphLayer(keras.layers.Layer):
         self._bias_regularizer = keras.regularizers.get(bias_regularizer)
         self._kernel_constraint = keras.constraints.get(kernel_constraint)
         self._bias_constraint = keras.constraints.get(bias_constraint)
-        self.built = False
-        # TODO: Add warning if build is implemented in subclass
-        # TODO: Add warning if call is implemented in subclass
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Calls the layer.
@@ -59,9 +56,7 @@ class GraphLayer(keras.layers.Layer):
 
         May use built-in methods such as `get_weight`, `get_dense` and `get_einsum_dense`.
 
-        Optionally implemented by subclass. If implemented, it is recommended to
-        If sub-layers are built (via `build` or `build_from_spec`), set `built`
-        to True. If not, symbolic input will be passed through the layer to build them.
+        Optionally implemented by subclass.
 
         Args:
             spec:
@@ -70,17 +65,11 @@ class GraphLayer(keras.layers.Layer):
         """ 
     
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
-            
+        if not isinstance(spec, tensors.GraphTensor.Spec):
+            raise ValueError('`spec` needs to be a `GraphTensor.Spec` instance.')
         self._custom_build_config = {'spec': _serialize_spec(spec)}
-
         self.build_from_spec(spec)
 
-        if not self.built:
-            # Automatically build layer or model by calling it on symbolic inputs
-            self.built = True 
-            symbolic_inputs = Input(spec)
-            self(symbolic_inputs)
-    
     def get_build_config(self) -> dict:
         if not hasattr(self, '_custom_build_config'):
             return super().get_build_config()
@@ -93,6 +82,10 @@ class GraphLayer(keras.layers.Layer):
         else:
             spec = _deserialize_spec(config['spec'])
             self.build(spec)
+            if isinstance(self, keras.models.Model):
+                # Build sub-layers automatically if subclassed Model.
+                symbolic_inputs = Input(spec)
+                self(symbolic_inputs)
 
     def call(
         self, 
@@ -195,7 +188,7 @@ class GraphLayer(keras.layers.Layer):
                 keras.constraints.serialize(self._bias_constraint),
         })
         return config
-    
+
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class GraphConv(GraphLayer):
@@ -420,8 +413,6 @@ class GIConv(GraphConv):
             self._feedforward_output_dense = self.get_dense(self.units)
             self._feedforward_output_dense.build([None, self.units])
 
-        self.built = True
-
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Computes messages.
         """
@@ -564,8 +555,6 @@ class GAConv(GraphConv):
             self._feedforward_activation = self._activation
             self._feedforward_output_dense = self.get_dense(self.units)
             self._feedforward_output_dense.build([None, self.units])
-
-        self.built = True
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
 
@@ -724,8 +713,6 @@ class GTConv(GraphConv):
             self._feedforward_intermediate_dense.build([None, self.units])
             self._feedforward_output_dense = self.get_dense(self.units)
             self._feedforward_output_dense.build([None, self.units])
-
-        self.built = True
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Computes messages.
@@ -942,7 +929,6 @@ class MPConv(GraphConv):
                 'GRU cell, it will automatically be projected prior to it.'
             )
             self._previous_node_dense = self.get_dense(self.units, activation=self._activation)
-        self.built = True
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         feature = keras.ops.concatenate(
@@ -1093,8 +1079,6 @@ class EGConv3D(GraphConv):
             self.output_dense = self.get_dense(self.units)
             self.output_dense.build([None, self.units])
 
-        self.built = True
-
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Computes messages.
         """
@@ -1228,7 +1212,6 @@ class Projection(GraphLayer):
             self.units = feature_dim
         self._dense = self.get_dense(self.units)
         self._dense.build([None, feature_dim])
-        self.built = True
 
     def propagate(self, tensor: tensors.GraphTensor):
         """Calls the layer.
@@ -1293,7 +1276,6 @@ class GraphNetwork(GraphLayer):
                     'Automatically adding a edge projection layer to match `units`.'
                 )
                 self._edge_dense = self.get_dense(units)
-        self.built = True
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Calls the layer.
@@ -1386,6 +1368,7 @@ class NodeEmbedding(GraphLayer):
         dim: int = None, 
         normalization: bool = False,
         embed_context: bool = True,
+        allow_reconstruction: bool = False,
         allow_masking: bool = True, 
         **kwargs
     ) -> None:
@@ -1395,6 +1378,7 @@ class NodeEmbedding(GraphLayer):
         self._embed_context = embed_context
         self._masking_rate = None
         self._allow_masking = allow_masking
+        self._allow_reconstruction = allow_reconstruction
 
     def build_from_spec(self, spec: tensors.GraphTensor.Spec) -> None:
         """Builds the layer.
@@ -1429,8 +1413,6 @@ class NodeEmbedding(GraphLayer):
                     name='output_layer_norm'
                 )
             self._norm.build([None, self.dim])
-
-        self.built = True
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Calls the layer.
@@ -1467,8 +1449,10 @@ class NodeEmbedding(GraphLayer):
         if self._normalization:
             feature = self._norm(feature)
 
-        return tensor.update({'node': {'feature': feature}})
-
+        if not self._allow_reconstruction:
+            return tensor.update({'node': {'feature': feature}})
+        return tensor.update({'node': {'feature': feature, 'target_feature': feature}})
+    
     @property 
     def masking_rate(self):
         return self._masking_rate 
@@ -1488,7 +1472,8 @@ class NodeEmbedding(GraphLayer):
             'dim': self.dim,
             'normalization': self._normalization,
             'embed_context': self._embed_context,
-            'allow_masking': self._allow_masking
+            'allow_masking': self._allow_masking,
+            'allow_reconstruction': self._allow_reconstruction,
         })
         return config
     
@@ -1540,8 +1525,6 @@ class EdgeEmbedding(GraphLayer):
                 )
             self._norm.build([None, self.dim])
 
-        self.built = True
-
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Calls the layer.
         """
@@ -1572,7 +1555,7 @@ class EdgeEmbedding(GraphLayer):
         if self._normalization:
             feature = self._norm(feature)
 
-        return tensor.update({'edge': {'feature': feature}})
+        return tensor.update({'edge': {'feature': feature, 'embedding': feature}})
 
     @property 
     def masking_rate(self):
@@ -1625,6 +1608,53 @@ class EdgeProjection(Projection):
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
+class Reconstruction(GraphLayer):
+
+    def __init__(
+        self, 
+        loss: keras.losses.Loss | str = 'mse',
+        loss_weight: float = 0.5, 
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self._loss_fn = keras.losses.get(loss)
+        self._loss_weight = loss_weight
+    
+    def build_from_spec(self, spec: tensors.GraphTensor.Spec) -> None:
+         has_target_node_feature = 'target_feature' in spec.node
+         if not has_target_node_feature:
+             raise ValueError(
+                'Could not find `target_feature` in `spec.node`. '
+                'Add a `target_feature` via `NodeEmbedding` by setting '
+                '`allow_reconstruction` to `True`.'
+            )
+         output_dim = spec.node['target_feature'].shape[-1]
+         node_feature_dim = spec.node['feature'].shape[-1]
+         self._dense = self.get_dense(output_dim)
+         self._dense.build([None, node_feature_dim])
+
+    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        target_node_feature = tensor.node['target_feature']
+        transformed_node_feature = tensor.node['feature']
+
+        reconstructed_node_feature = self._dense(
+            transformed_node_feature
+        )
+
+        loss = self._loss_fn(
+            target_node_feature, reconstructed_node_feature
+        ) 
+        self.add_loss(keras.ops.sum(loss) * self._loss_weight)
+        return tensor.update({'node': {'feature': transformed_node_feature}})
+    
+    def get_config(self):
+        config = super().get_config()
+        config['loss'] = keras.losses.serialize(self._loss_fn)
+        config['loss_weight'] = self._loss_weight 
+        return config
+    
+
+@keras.saving.register_keras_serializable(package='molcraft')
 class EdgeBias(GraphLayer):
 
     def __init__(self, biases: int, **kwargs):
@@ -1642,7 +1672,6 @@ class EdgeBias(GraphLayer):
                 self.biases, kernel_initializer='zeros'
             )
             self._edge_length_dense.build([None, spec.edge['length'].shape[-1]])
-        self.built = True
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         bias = keras.ops.zeros(
@@ -1681,8 +1710,7 @@ class GaussianDistance(GraphLayer):
             dtype='float32',
             trainable=True
         )
-        self.built = True
-        
+
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         euclidean_distance = ops.euclidean_distance(
             tensor.gather('coordinate', 'source'),
@@ -1724,7 +1752,6 @@ class Readout(GraphLayer):
     def build_from_spec(self, spec: tensors.GraphTensor.Spec) -> None:
         """Builds the layer.
         """
-        self.built = True
 
     def propagate(self, tensor: tensors.GraphTensor) -> tf.Tensor:
         """Calls the layer.
