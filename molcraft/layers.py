@@ -369,7 +369,6 @@ class GIConv(GraphConv):
         activation: keras.layers.Activation | str | None = 'relu',
         use_bias: bool = True,
         normalization: bool = False,
-        dropout: float = 0.0,
         update_edge_feature: bool = True,
         **kwargs,
     ):
@@ -380,7 +379,6 @@ class GIConv(GraphConv):
             **kwargs
         )
         self._activation = keras.activations.get(activation)
-        self._dropout = dropout 
         self._update_edge_feature = update_edge_feature
 
     def build_from_spec(self, spec: tensors.GraphTensor.Spec) -> None:
@@ -419,7 +417,6 @@ class GIConv(GraphConv):
             self._feedforward_intermediate_dense = self.get_dense(self.units)
             self._feedforward_intermediate_dense.build([None, node_feature_dim])
             self._feedforward_activation = self._activation
-            self._feedforward_dropout = keras.layers.Dropout(self._dropout)
             self._feedforward_output_dense = self.get_dense(self.units)
             self._feedforward_output_dense.build([None, self.units])
 
@@ -465,7 +462,6 @@ class GIConv(GraphConv):
         node_feature = tensor.node['feature']
         node_feature = self._feedforward_intermediate_dense(node_feature)
         node_feature = self._feedforward_activation(node_feature)
-        node_feature = self._feedforward_dropout(node_feature)
         node_feature = self._feedforward_output_dense(node_feature)
         return tensor.update(
             {
@@ -479,7 +475,6 @@ class GIConv(GraphConv):
         config = super().get_config()
         config.update({
             'activation': keras.activations.serialize(self._activation),
-            'dropout': self._dropout, 
             'update_edge_feature': self._update_edge_feature
         })
         return config
@@ -498,7 +493,6 @@ class GAConv(GraphConv):
         activation: keras.layers.Activation | str | None = "relu",
         use_bias: bool = True,
         normalization: bool = False,
-        dropout: float = 0.0,
         update_edge_feature: bool = True,
         attention_activation: keras.layers.Activation | str | None = "leaky_relu",
         **kwargs,
@@ -515,7 +509,6 @@ class GAConv(GraphConv):
             raise ValueError(f"units need to be divisible by heads.")
         self._head_units = self.units // self.heads 
         self._activation = keras.activations.get(activation)
-        self._dropout = dropout
         self._update_edge_feature = update_edge_feature
         self._attention_activation = keras.activations.get(attention_activation)
 
@@ -563,8 +556,6 @@ class GAConv(GraphConv):
             'ij,jkh->ikh', (self.head_units, self.heads)
         )
         self._node_self_dense.build([None, node_feature_dim])
-
-        self._dropout_layer = keras.layers.Dropout(self._dropout)
 
         self.built = True
 
@@ -614,7 +605,6 @@ class GAConv(GraphConv):
     def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         node_feature = tensor.aggregate('message', mode='sum')
         node_feature += self._node_self_dense(tensor.node['feature'])
-        node_feature = self._dropout_layer(node_feature)
         node_feature = keras.ops.reshape(node_feature, (-1, self.units))
         return tensor.update(
             {
@@ -643,7 +633,6 @@ class GAConv(GraphConv):
         config.update({
             "heads": self._heads,
             'activation': keras.activations.serialize(self._activation),
-            'dropout': self._dropout, 
             'update_edge_feature': self._update_edge_feature,
             'attention_activation': keras.activations.serialize(self._attention_activation),
         })
@@ -663,7 +652,6 @@ class GTConv(GraphConv):
         activation: keras.layers.Activation | str | None = "relu",
         use_bias: bool = True,
         normalization: bool = False,
-        dropout: float = 0.0,
         attention_dropout: float = 0.0,
         **kwargs,
     ) -> None:
@@ -678,7 +666,6 @@ class GTConv(GraphConv):
             raise ValueError(f"units need to be divisible by heads.")
         self._head_units = self.units // self.heads 
         self._activation = keras.activations.get(activation)
-        self._dropout = dropout
         self._attention_dropout = attention_dropout
 
     @property 
@@ -714,8 +701,6 @@ class GTConv(GraphConv):
 
         self._softmax_dropout = keras.layers.Dropout(self._attention_dropout) 
 
-        self._self_attention_dropout = keras.layers.Dropout(self._dropout)
-
         self._add_bias = not 'bias' in spec.edge
 
         if self._add_bias:
@@ -724,7 +709,6 @@ class GTConv(GraphConv):
 
         has_overridden_update = self.__class__.update != GTConv.update 
         if not has_overridden_update:
-            self._feedforward_dropout = keras.layers.Dropout(self._dropout)
             self._feedforward_intermediate_dense = self.get_dense(self.units)
             self._feedforward_intermediate_dense.build([None, self.units])
             self._feedforward_output_dense = self.get_dense(self.units)
@@ -778,7 +762,6 @@ class GTConv(GraphConv):
         node_feature = tensor.aggregate('message', mode='sum')
         node_feature = keras.ops.reshape(node_feature, (-1, self.units))
         node_feature = self._output_dense(node_feature)
-        node_feature = self._self_attention_dropout(node_feature)
         return tensor.update(
             {
                 'node': {
@@ -799,7 +782,6 @@ class GTConv(GraphConv):
         node_feature = self._feedforward_intermediate_dense(node_feature)
         node_feature = self._activation(node_feature)
         node_feature = self._feedforward_output_dense(node_feature)
-        node_feature = self._feedforward_dropout(node_feature)
 
         return tensor.update(
             {
@@ -814,7 +796,6 @@ class GTConv(GraphConv):
         config.update({
             "heads": self._heads,
             'activation': keras.activations.serialize(self._activation),
-            'dropout': self._dropout, 
             'attention_dropout': self._attention_dropout,
         })
         return config
@@ -902,7 +883,6 @@ class GTConv3D(GTConv):
         )
         node_feature = self._output_dense(node_feature)
         node_feature = keras.ops.sum(node_feature, axis=1)
-        node_feature = self._self_attention_dropout(node_feature)
         return tensor.update(
             {
                 'node': {
@@ -929,7 +909,6 @@ class MPConv(GraphConv):
         activation: keras.layers.Activation | str | None = None, 
         use_bias: bool = True,
         normalization: bool = False,
-        dropout: float = 0.0,
         **kwargs
     ) -> None:
         super().__init__(
@@ -939,7 +918,6 @@ class MPConv(GraphConv):
             **kwargs
         )
         self._activation = keras.activations.get(activation)
-        self._dropout = dropout or 0.0
 
     def build_from_spec(self, spec: tensors.GraphTensor.Spec) -> None:
         node_feature_dim = spec.node['feature'].shape[-1]
@@ -1013,7 +991,6 @@ class MPConv(GraphConv):
         config = super().get_config()
         config.update({
             'activation': keras.activations.serialize(self._activation),
-            'dropout': self._dropout,
         })
         return config 
     
@@ -1068,7 +1045,6 @@ class EGConv3D(GraphConv):
         activation: keras.layers.Activation | str | None = None, 
         use_bias: bool = True,
         normalization: bool = False,
-        dropout: float = 0.0,
         **kwargs
     ) -> None:
         super().__init__(
@@ -1078,7 +1054,6 @@ class EGConv3D(GraphConv):
             **kwargs
         )
         self._activation = keras.activations.get(activation)
-        self._dropout = dropout or 0.0
 
     def build_from_spec(self, spec: tensors.GraphTensor.Spec) -> None:
         if 'coordinate' not in spec.node:
@@ -1104,7 +1079,6 @@ class EGConv3D(GraphConv):
         if not has_overridden_update:
             self.update_fn = self.get_dense(self.units, activation=self._activation)
             self.update_fn.build([None, node_feature_dim + self.units])
-            self._dropout_layer = keras.layers.Dropout(self._dropout)
         self.built = True
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
@@ -1195,7 +1169,6 @@ class EGConv3D(GraphConv):
                 axis=-1
             )
         )  
-        updated_node_feature = self._dropout_layer(updated_node_feature)
         return tensor.update(
             {
                 'node': {
@@ -1209,7 +1182,6 @@ class EGConv3D(GraphConv):
         config = super().get_config()
         config.update({
             'activation': keras.activations.serialize(self._activation),
-            'dropout': self._dropout,
         })
         return config 
     
