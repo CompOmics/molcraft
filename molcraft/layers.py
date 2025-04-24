@@ -557,6 +557,14 @@ class GAConv(GraphConv):
         )
         self._node_self_dense.build([None, node_feature_dim])
 
+        has_overridden_update = self.__class__.update != GAConv.update 
+        if not has_overridden_update:
+            self._feedforward_intermediate_dense = self.get_dense(self.units)
+            self._feedforward_intermediate_dense.build([None, self.units])
+            self._feedforward_activation = self._activation
+            self._feedforward_output_dense = self.get_dense(self.units)
+            self._feedforward_output_dense.build([None, self.units])
+
         self.built = True
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
@@ -619,7 +627,10 @@ class GAConv(GraphConv):
         )
     
     def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        node_feature = self._activation(tensor.node['feature'])
+        node_feature = tensor.node['feature']
+        node_feature = self._feedforward_intermediate_dense(node_feature)
+        node_feature = self._feedforward_activation(node_feature)
+        node_feature = self._feedforward_output_dense(node_feature)
         return tensor.update(
             {
                 'node': {
@@ -782,7 +793,6 @@ class GTConv(GraphConv):
         node_feature = self._feedforward_intermediate_dense(node_feature)
         node_feature = self._activation(node_feature)
         node_feature = self._feedforward_output_dense(node_feature)
-
         return tensor.update(
             {
                 'node': {
@@ -1079,6 +1089,10 @@ class EGConv3D(GraphConv):
         if not has_overridden_update:
             self.update_fn = self.get_dense(self.units, activation=self._activation)
             self.update_fn.build([None, node_feature_dim + self.units])
+
+            self.output_dense = self.get_dense(self.units)
+            self.output_dense.build([None, self.units])
+
         self.built = True
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
@@ -1169,6 +1183,7 @@ class EGConv3D(GraphConv):
                 axis=-1
             )
         )  
+        updated_node_feature = self.output_dense(updated_node_feature)
         return tensor.update(
             {
                 'node': {
