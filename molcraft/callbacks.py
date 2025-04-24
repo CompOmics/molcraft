@@ -19,3 +19,15 @@ class TensorBoard(keras.callbacks.TensorBoard):
                             weight, image_weight_name, epoch
                         )
             self._train_writer.flush()
+
+
+class LearningRateDecay(keras.callbacks.LearningRateScheduler):
+
+    def __init__(self, rate: float, delay: int = 0, **kwargs):
+
+        def lr_schedule(epoch: int, lr: float):
+            if epoch < delay:
+                return float(lr)
+            return float(lr * keras.ops.exp(-rate))
+        
+        super().__init__(schedule=lr_schedule, **kwargs)
