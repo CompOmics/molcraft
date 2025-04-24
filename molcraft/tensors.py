@@ -219,13 +219,13 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
             raise ValueError
         return ops.gather(self.node[node_attr], self.edge[edge_type])
     
-    def aggregate(self, edge_attr: str, edge_type: str = 'target') -> tf.Tensor:
+    def aggregate(self, edge_attr: str, edge_type: str = 'target', mode: str = 'sum') -> tf.Tensor:
         if edge_type != 'source' and edge_type != 'target':
-            raise ValueError
+            raise ValueError('`edge_attr` needs to be `source` or `target`.')
         edge_attr = self.edge[edge_attr]
         if 'weight' in self.edge:
             edge_attr = edge_attr * self.edge['weight']
-        return ops.aggregate(edge_attr, self.edge[edge_type], self.num_nodes)
+        return ops.aggregate(edge_attr, self.edge[edge_type], self.num_nodes, mode=mode)
     
     def propagate(self, add_edge_feature: bool = False):
         updated_feature = ops.propagate(

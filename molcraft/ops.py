@@ -19,9 +19,16 @@ def gather(
 def aggregate(
     node_feature: tf.Tensor, 
     edge: tf.Tensor, 
-    num_nodes: tf.Tensor
+    num_nodes: tf.Tensor,
+    mode: str = 'sum',
 ) -> tf.Tensor:
-    return keras.ops.segment_sum(node_feature, edge, num_nodes)
+    if mode == 'mean':
+        return segment_mean(
+            node_feature, edge, num_nodes, sorted=False
+        )
+    return keras.ops.segment_sum(
+        node_feature, edge, num_nodes, sorted=False
+    )
 
 def propagate(
     node_feature: tf.Tensor,

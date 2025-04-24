@@ -7,6 +7,9 @@ from keras.src.models import functional
 from molcraft import tensors
 from molcraft import ops 
 
+# TODO: Make normalization False by default, for subclassed layers. Also, let subclassed layers use
+#       normalization of base layer.
+
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class GraphLayer(keras.layers.Layer):
@@ -353,7 +356,7 @@ class GIConv(GraphConv):
         units: int,
         activation: keras.layers.Activation | str | None = 'relu',
         use_bias: bool = True,
-        normalize: bool = True,
+        normalize: bool = False,
         dropout: float = 0.0,
         update_edge_feature: bool = True,
         **kwargs,
@@ -432,7 +435,7 @@ class GIConv(GraphConv):
     def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Aggregates messages.
         """
-        node_feature = tensor.aggregate('message')
+        node_feature = tensor.aggregate('message', mode='mean')
         node_feature += (1 + self.epsilon) * tensor.node['feature']
         node_feature = self._feedforward_intermediate_dense(node_feature)
         return tensor.update(
@@ -483,7 +486,7 @@ class GAConv(GraphConv):
         heads: int = 8,
         activation: keras.layers.Activation | str | None = "relu",
         use_bias: bool = True,
-        normalize: bool = True,
+        normalize: bool = False,
         dropout: float = 0.0,
         update_edge_feature: bool = True,
         attention_activation: keras.layers.Activation | str | None = "leaky_relu",
@@ -598,7 +601,7 @@ class GAConv(GraphConv):
         )
     
     def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        node_feature = tensor.aggregate('message')
+        node_feature = tensor.aggregate('message', mode='sum')
         node_feature += self._node_self_dense(tensor.node['feature'])
         node_feature = self._dropout_layer(node_feature)
         node_feature = keras.ops.reshape(node_feature, (-1, self.units))
@@ -648,7 +651,7 @@ class GTConv(GraphConv):
         heads: int = 8,
         activation: keras.layers.Activation | str | None = "relu",
         use_bias: bool = True,
-        normalize: bool = True,
+        normalize: bool = False,
         dropout: float = 0.0,
         attention_dropout: float = 0.0,
         **kwargs,
@@ -780,7 +783,7 @@ class GTConv(GraphConv):
     def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Aggregates messages.
         """
-        node_feature = tensor.aggregate('message')
+        node_feature = tensor.aggregate('message', mode='sum')
         node_feature = keras.ops.reshape(node_feature, (-1, self.units))
         node_feature = self._output_dense(node_feature)
         node_feature = self._self_attention_dropout(node_feature)
@@ -913,7 +916,7 @@ class GTConv3D(GTConv):
     def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Aggregates messages.
         """
-        node_feature = tensor.aggregate('message')
+        node_feature = tensor.aggregate('message', mode='sum')
         node_feature = keras.ops.reshape(
             node_feature, (tensor.num_nodes, -1, self.units)
         )
@@ -945,7 +948,7 @@ class MPConv(GraphConv):
         units: int = 128, 
         activation: keras.layers.Activation | str | None = None, 
         use_bias: bool = True,
-        normalize: bool = True,
+        normalize: bool = False,
         dropout: float = 0.0,
         **kwargs
     ) -> None:
@@ -999,7 +1002,7 @@ class MPConv(GraphConv):
         )
 
     def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        aggregate = tensor.aggregate('message')
+        aggregate = tensor.aggregate('message', mode='mean')
         previous = tensor.node['feature']
         if self.project_input_node_feature:
             previous = self._previous_node_dense(previous)
@@ -1084,7 +1087,7 @@ class EGConv3D(GraphConv):
         units: int = 128, 
         activation: keras.layers.Activation | str | None = None, 
         use_bias: bool = True,
-        normalize: bool = True,
+        normalize: bool = False,
         dropout: float = 0.0,
         **kwargs
     ) -> None:
@@ -1185,7 +1188,7 @@ class EGConv3D(GraphConv):
         updated_coordinate = tensor.aggregate('relative_node_coordinate') * coefficient
         updated_coordinate += tensor.node['coordinate']
 
-        aggregate = tensor.aggregate('message')
+        aggregate = tensor.aggregate('message', mode='mean')
         return tensor.update(
             {
                 'node': {
@@ -1414,7 +1417,7 @@ class NodeEmbedding(GraphLayer):
     def __init__(
         self, 
         dim: int = None, 
-        normalize: bool = True,
+        normalize: bool = False,
         embed_context: bool = True,
         allow_masking: bool = True, 
         **kwargs
@@ -1527,7 +1530,7 @@ class EdgeEmbedding(GraphLayer):
     def __init__(
         self, 
         dim: int = None, 
-        normalize: bool = True,
+        normalize: bool = False,
         allow_masking: bool = True, 
         **kwargs
     ) -> None:
