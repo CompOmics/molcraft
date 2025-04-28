@@ -103,6 +103,25 @@ class TestLayer(unittest.TestCase):
             ),
         ]
 
+    def test_graph_conv(self):
+        for i, tensor in enumerate(self.tensors):
+            for drop_edge_feature in [False, True]:
+                if drop_edge_feature:
+                    tensor = tensor.update(
+                        {
+                            'edge': {
+                                'feature': None
+                            }
+                        }
+                    )
+                for skip_connection in [True, False, 'weighted']:
+                    for normalization in [True, False, 'batch']:
+                        with self.subTest(i=i, skip_connection=skip_connection, normalization=normalization, flat=True):
+                            output = layers.GraphConv(128, skip_connection=skip_connection, normalization=normalization)(tensor)
+                            self.assertTrue(output.node['feature'].shape[-1] == 128)
+                            if not drop_edge_feature:
+                                self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
+
     def test_gi_conv(self):
         for i, tensor in enumerate(self.tensors):
             for drop_edge_feature in [False, True]:
