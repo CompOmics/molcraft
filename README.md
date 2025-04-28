@@ -11,7 +11,7 @@
 - Customizable and serializable **layers** and **models**
 - Customizable **GraphTensor**
 - Fast and efficient featurization of molecular graphs
-- Efficient and easy-to-use input pipelines using TF **records**
+- Fast and efficient input pipelines using TF **records**
 
 ## Examples 
 
