@@ -389,7 +389,7 @@ class GraphConv(GraphLayer):
                     name='output_layer_norm'
                 )
 
-        self._has_edge_feature = 'edge' in spec.edge 
+        self._has_edge_feature = 'feature' in spec.edge 
 
         has_overridden_message = self.__class__.message != GraphConv.message 
         if not has_overridden_message:
@@ -1479,6 +1479,32 @@ class GraphNetwork(GraphLayer):
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
+class Extraction(GraphLayer):
+
+    def __init__(
+        self, 
+        field: str, 
+        inner_field: str | None = None, 
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self.field = field 
+        self.inner_field = inner_field
+
+    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        data = dict(getattr(tensor, self.field))
+        if not self.inner_field:
+            return data 
+        return data[self.inner_field]
+     
+    def get_config(self):
+        config = super().get_config()
+        config['field'] = self.field
+        config['inner_field'] = self.inner_field 
+        return config 
+    
+
+@keras.saving.register_keras_serializable(package='molcraft')
 class NodeEmbedding(GraphLayer):
 
     """Node embedding layer.
@@ -1568,6 +1594,10 @@ class NodeEmbedding(GraphLayer):
         if not self._allow_reconstruction:
             return tensor.update({'node': {'feature': feature}})
         return tensor.update({'node': {'feature': feature, 'target_feature': feature}})
+    
+    @property 
+    def allow_masking(self):
+        return self._allow_masking
     
     @property 
     def masking_rate(self):
