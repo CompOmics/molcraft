@@ -23,7 +23,7 @@ class ConformerEmbedder(ConformerProcessor):
     def __init__(
         self, 
         method: str = 'ETKDGv3',
-        num_conformers: int = 10, 
+        num_conformers: int = 5, 
         force: bool = True,
         **kwargs,
     ) -> None:

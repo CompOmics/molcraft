@@ -511,7 +511,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
                 steps=[
                     conformers.ConformerEmbedder(
                         method='ETKDGv3', 
-                        num_conformers=10
+                        num_conformers=5
                     ),
                 ]
             )
