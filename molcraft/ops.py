@@ -82,6 +82,16 @@ def edge_softmax(
     denominator = gather(denominator, edge_target)
     return numerator / denominator
 
+def edge_weight(
+    edge: tf.Tensor,
+    edge_weight: tf.Tensor,
+) -> tf.Tensor:
+    expected_rank = len(keras.ops.shape(edge))
+    current_rank = len(keras.ops.shape(edge_weight))
+    for _ in range(expected_rank - current_rank):
+        edge_weight = keras.ops.expand_dims(edge_weight, axis=-1)
+    return edge * edge_weight
+
 def segment_mean(
     data: tf.Tensor,
     segment_ids: tf.Tensor,

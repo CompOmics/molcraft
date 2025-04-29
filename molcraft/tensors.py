@@ -224,7 +224,7 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
             raise ValueError('`edge_attr` needs to be `source` or `target`.')
         edge_attr = self.edge[edge_attr]
         if 'weight' in self.edge:
-            edge_attr = edge_attr * self.edge['weight']
+            edge_attr = ops.edge_weight(edge_attr, self.edge['weight'])
         return ops.aggregate(edge_attr, self.edge[edge_type], self.num_nodes, mode=mode)
     
     def propagate(self, add_edge_feature: bool = False):
