@@ -66,16 +66,3 @@ print(pred)
 # models.load_model('/tmp/model.keras')
 ```
 
-## Installation
-
-Install the pre-release of molcraft via pip:
-
-```bash
-pip install molcraft --pre
-```
-
-with GPU support:
-
-```bash
-pip install molcraft[gpu] --pre
-```
