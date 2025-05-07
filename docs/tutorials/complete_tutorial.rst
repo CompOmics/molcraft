@@ -41,13 +41,13 @@ Part 3: Complete modeling pipeline
     records.write(validation_data, featurizer, '/path/to/records/validation/', overwrite=False)
     records.write(test_data, featurizer, '/path/to/records/test/', overwrite=False)
 
-    train_dataset = records.load('/path/to/records/train/', shuffle_files=True)
+    train_dataset = records.read('/path/to/records/train/', shuffle_files=True)
     train_dataset = train_dataset.shuffle(1024).batch(32).prefetch(-1)
 
-    validation_dataset = records.load('/path/to/records/validation/')
+    validation_dataset = records.read('/path/to/records/validation/')
     validation_dataset = validation_dataset.batch(128).prefetch(-1)
 
-    test_dataset = records.load('/path/to/records/test/')
+    test_dataset = records.read('/path/to/records/test/')
     test_dataset = test_dataset.batch(128).prefetch(-1)
     
     model = models.GraphModel.from_layers(

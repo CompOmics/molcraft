@@ -34,7 +34,7 @@ write molecular (sub)graphs to disk and load it as a `tf.data.TFRecordDataset`:
 
     # data = [(SMILES_1, LABEL_1), ..., (SMILES_N, LABEL_N)]
     records.write(data, featurizer, '/path/to/records/', overwrite=False)
-    dataset = records.load('/path/to/records/').batch(32).prefetch(-1)
+    dataset = records.read('/path/to/records/').batch(32).prefetch(-1)
     model.fit(dataset)
 
 

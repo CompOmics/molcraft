@@ -36,7 +36,10 @@ def write(
         if not isinstance(inputs, list):
             inputs = list(inputs)
 
-        example = _featurize_input(inputs[0], featurizer)
+        example = inputs[0]
+        if isinstance(example, (list, np.ndarray)):
+            example = tuple(example)
+        example = featurizer(example)
         if not isinstance(example, tensors.GraphTensor):
             example = example[0]
 
@@ -46,7 +49,7 @@ def write(
             num_processes = mp.cpu_count()
 
         if num_files is None:
-            num_files = min(len(inputs), num_processes)
+            num_files = min(len(inputs), max(1, math.ceil(len(inputs) / 1_000)))
             
         chunk_size = math.ceil(len(inputs) / num_files)
         num_files = math.ceil(len(inputs) / chunk_size)
@@ -88,7 +91,7 @@ def write(
         for process in processes:
             process.join()         
     
-def load(
+def read(
     path: str, 
     shuffle_files: bool = False
 ) -> tf.data.Dataset:
@@ -107,13 +110,28 @@ def load(
         ds = ds.unbatch()
     return ds
 
+def save_spec(path: str, spec: tensors.GraphTensor.Spec) -> None:
+    proto = spec.experimental_as_proto()
+    with open(path, 'wb') as fh:
+        fh.write(proto.SerializeToString())
+
+def load_spec(path: str) -> tensors.GraphTensor.Spec:
+    with open(path, 'rb') as fh:
+        serialized_proto = fh.read()
+    spec = tensors.GraphTensor.Spec.experimental_from_proto(
+        tensors.GraphTensor.Spec
+        .experimental_type_proto()
+        .FromString(serialized_proto)
+    )
+    return spec
+    
 def _write_tfrecord(
     inputs, 
     path: str,
     featurizer: featurizers.Featurizer, 
 ) -> None:
     
-    def write_example(tensor):
+    def _write_example(tensor):
         flat_values = tf.nest.flatten(tensor, expand_composites=True)
         flat_values = [tf.io.serialize_tensor(value).numpy() for value in flat_values]
         feature = tf.train.Feature(bytes_list=tf.train.BytesList(value=flat_values))
@@ -122,17 +140,15 @@ def _write_tfrecord(
 
     with tf.io.TFRecordWriter(path) as writer:
         for x in inputs:
-            tensor = _featurize_input(x, featurizer)
-            if isinstance(tensor, tensors.GraphTensor):
-                write_example(tensor)
-            else:
-                for t in tensor:
-                    write_example(t)
-
-def _featurize_input(x, featurizer):
-    if isinstance(x, (list, np.ndarray)):
-        x = tuple(x)
-    return featurizer(x)
+            if isinstance(x, (list, np.ndarray)):
+                x = tuple(x)
+            tensor = featurizer(x)
+            if tensor is not None:
+                if isinstance(tensor, tensors.GraphTensor):
+                    _write_example(tensor)
+                else:
+                    for t in tensor:
+                        _write_example(t)
 
 def _serialize_example(
     feature: dict[str, tf.train.Feature]
@@ -152,18 +168,3 @@ def _parse_example(
         tf.nest.flatten(spec, expand_composites=True))]
     out = tf.nest.pack_sequence_as(spec, tf.nest.flatten(out), expand_composites=True)
     return out
-
-def save_spec(path: str, spec: tensors.GraphTensor.Spec) -> None:
-    proto = spec.experimental_as_proto()
-    with open(path, 'wb') as fh:
-        fh.write(proto.SerializeToString())
-
-def load_spec(path: str) -> tensors.GraphTensor.Spec:
-    with open(path, 'rb') as fh:
-        serialized_proto = fh.read()
-    spec = tensors.GraphTensor.Spec.experimental_from_proto(
-        tensors.GraphTensor.Spec
-        .experimental_type_proto()
-        .FromString(serialized_proto))
-    return spec
-    
