@@ -125,23 +125,45 @@ class GraphLayer(keras.layers.Layer):
             return tensors.to_dict(outputs)
         return outputs
 
-    def __call__(self, inputs, **kwargs):
+    def __call__(
+        self, 
+        graph: dict[str, dict[str, tf.Tensor]] | tensors.GraphTensor, 
+        **kwargs
+    ) -> tf.Tensor | dict[str, dict[str, tf.Tensor]] | tensors.GraphTensor:
         if not self.built:
-            spec = _spec_from_inputs(inputs)
+            spec = _spec_from_inputs(graph)
             self.build(spec)
-        convert = isinstance(inputs, tensors.GraphTensor)
-        if convert:
-            inputs = tensors.to_dict(inputs)
+
+        is_graph_tensor = isinstance(graph, tensors.GraphTensor)
+        if is_graph_tensor:
+            graph = tensors.to_dict(graph)
+        else:
+            graph = {field: dict(data) for (field, data) in graph.items()}
+
         if isinstance(self, functional.Functional):
-            inputs, left_out_inputs = _match_functional_input(self.input, inputs)
-        outputs = super().__call__(inputs, **kwargs)
+            # As a functional model is strict for what input can 
+            # be passed to it, we need to temporarily pop some of the 
+            # input and add it afterwards.
+            label = graph['context'].pop('label', None)
+            weight = graph['context'].pop('weight', None)
+            tf.nest.assert_same_structure(self.input, graph)
+
+        outputs = super().__call__(graph, **kwargs)
+
         if not tensors.is_graph(outputs):
             return outputs
+        
+        graph = outputs
         if isinstance(self, functional.Functional):
-            outputs = _add_left_out_inputs(outputs, left_out_inputs)
-        if convert:
-            outputs = tensors.from_dict(outputs)
-        return outputs
+            if label is not None:
+                graph['context']['label'] = label 
+            if weight is not None:
+                graph['context']['weight'] = weight
+
+        if is_graph_tensor:
+            return tensors.from_dict(graph)
+
+        return graph
 
     def get_build_config(self) -> dict:
         if self._custom_build_config:
@@ -911,7 +933,6 @@ class GTConv(GraphConv):
                     }
                 }
             )
-            
         node_feature = tensor.node['feature']
         
         query = self._query_dense(node_feature)
@@ -1630,8 +1651,11 @@ class EdgeEmbedding(GraphLayer):
         self._edge_dense = self.get_dense(self.dim)
 
         self._has_super = 'super' in spec.edge
+        self._has_self_loop = 'self_loop' in spec.edge
         if self._has_super:
             self._super_feature = self.get_weight(shape=[self.dim], name='super_edge_feature')
+        if self._has_self_loop:
+            self._self_loop_feature = self.get_weight(shape=[self.dim], name='self_loop_edge_feature')
         if self._allow_masking:
             self._mask_feature = self.get_weight(shape=[self.dim], name='mask_edge_feature')
 
@@ -1649,10 +1673,13 @@ class EdgeEmbedding(GraphLayer):
         feature = self._edge_dense(tensor.edge['feature'])
 
         if self._has_super:
-            super_feature = self._super_feature
             super_mask = keras.ops.expand_dims(tensor.edge['super'], 1)
-            feature = keras.ops.where(super_mask, super_feature, feature)
+            feature = keras.ops.where(super_mask, self._super_feature, feature)
 
+        if self._has_self_loop:
+            self_loop_mask = keras.ops.expand_dims(tensor.edge['self_loop'], 1)
+            feature = keras.ops.where(self_loop_mask, self._self_loop_feature, feature)
+            
         if (
             self._allow_masking and 
             self._masking_rate is not None and 
@@ -1923,6 +1950,11 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
         inputs[outer_field] = {}
         for inner_field, nested_spec in data.items():
             if inner_field in ['label', 'weight']:
+                # Remove context label and weight from the symbolic input 
+                # as a functional model is strict for what input can be passed.
+                # We want to be able to pass a graph with or without labels 
+                # and sample weights. The __call__ method of the `GraphModel`
+                # temporarily pops label and weight to avoid errors. 
                 if outer_field == 'context':
                     continue
             kwargs = {
@@ -1948,23 +1980,6 @@ def warn(message: str) -> None:
         category=UserWarning,
         stacklevel=1
     )
-
-def _match_functional_input(functional_input, inputs):
-    matching_inputs = {}
-    for outer_field, data in functional_input.items():
-        matching_inputs[outer_field] = {}
-        for inner_field, _ in data.items():
-            call_input = inputs[outer_field].pop(inner_field)
-            matching_inputs[outer_field][inner_field] = call_input
-    unmatching_inputs = inputs
-    return matching_inputs, unmatching_inputs
-
-def _add_left_out_inputs(outputs, inputs):
-    for outer_field, data in inputs.items():
-        for inner_field, value in data.items():
-            if inner_field in ['label', 'weight']:
-                outputs[outer_field][inner_field] = value
-    return outputs 
 
 def _serialize_spec(spec: tensors.GraphTensor.Spec) -> dict:
     serialized_spec = {}

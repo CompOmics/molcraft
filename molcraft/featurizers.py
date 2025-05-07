@@ -175,7 +175,7 @@ class MolGraphFeaturizer(Featurizer):
             default_bond_features = (
                 bond_features == 'auto' or bond_features == 'default'
             )
-            if default_bond_features or self.radius > 1 or self.self_loops:
+            if default_bond_features or self.radius > 1:
                 vocab = ['zero', 'single', 'double', 'triple', 'aromatic']
                 bond_features = [
                     features.BondType(vocab)
@@ -254,24 +254,17 @@ class MolGraphFeaturizer(Featurizer):
 
         node = {}
         node['feature'] = atom_feature
-
-        if bond_feature is not None and (self.radius > 1 or self.self_loops):
-            # Append 'zero order' bond feature encoding, which encodes non-bonds. 
-            zero_bond_feature = np.array(
-                [[1., 0., 0., 0., 0.]], dtype=bond_feature.dtype
-            )
-            bond_feature = np.concatenate(
-                [bond_feature, zero_bond_feature], axis=0
-            )    
         
         edge = {}
         if self.radius == 1:
             edge['source'], edge['target'] = mol.adjacency(
                 fill='full', sparse=True, self_loops=self.self_loops, dtype=self.index_dtype
             )
+            if self.self_loops:
+                bond_feature = np.pad(bond_feature, [(0, 1), (0, 0)])
             if bond_feature is not None:
                 bond_indices = []
-                for (atom_i, atom_j) in zip(edge['source'], edge['target']):
+                for atom_i, atom_j in zip(edge['source'], edge['target']):
                     if atom_i == atom_j:
                         bond_indices.append(-1)
                     else:
@@ -279,6 +272,8 @@ class MolGraphFeaturizer(Featurizer):
                             mol.get_bond_between_atoms(atom_i, atom_j).index
                         )
                 edge['feature'] = bond_feature[bond_indices]
+                if self.self_loops:
+                    edge['self_loop'] = (edge['source'] == edge['target'])
         else:
             paths = chem.get_shortest_paths(
                 mol, radius=self.radius, self_loops=self.self_loops
@@ -293,6 +288,12 @@ class MolGraphFeaturizer(Featurizer):
                 [len(path) - 1 for path in paths], dtype=self.index_dtype
             )
             if bond_feature is not None:
+                zero_bond_feature = np.array(
+                    [[1., 0., 0., 0., 0.]], dtype=bond_feature.dtype
+                )
+                bond_feature = np.concatenate(
+                    [bond_feature, zero_bond_feature], axis=0
+                )    
                 edge['feature'] = self._expand_bond_features(
                     mol, paths, bond_feature,
                 )
@@ -734,6 +735,11 @@ def _add_super_edges(
             ]
         )
 
+    if 'self_loop' in edge:
+        edge['self_loop'] = np.pad(
+            edge['self_loop'], [(0, num_nodes * num_super_nodes * 2)],
+            constant_values=False,
+        )
     if 'length' in edge:
         edge['length'] = np.pad(edge['length'], [(0, 0), (1, 0)])
         zero_array = np.zeros([num_nodes * num_super_nodes * 2], dtype='int32')

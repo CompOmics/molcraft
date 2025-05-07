@@ -270,7 +270,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         """
         super().load_weights(filepath, *args, **kwargs)
 
-    def embedding(self) -> 'FunctionalGraphModel':
+    def embedding(self, layer_name: str = None) -> 'FunctionalGraphModel':
         model = self
         if not isinstance(model, FunctionalGraphModel):
             raise ValueError(
@@ -278,9 +278,20 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
                 'it needs to be a `FunctionalGraphModel`. '
             )
         inputs = model.input 
-        for layer in model.layers:
-            if isinstance(layer, layers.Readout):
-                outputs = layer.output 
+        if not layer_name:
+            for layer in model.layers:
+                if isinstance(layer, layers.Readout):
+                    outputs = layer.output 
+        else:
+            layer = model.get_layer(layer_name)
+            outputs = (
+                layer.output if isinstance(layer, keras.layers.Layer) else None
+            )
+            if outputs is None:
+                raise ValueError(
+                    f'Could not find `{layer_name}` or '
+                    f'`{layer_name} is not a `keras.layers.Layer`.'
+                )
         return self.__class__(inputs, outputs, name=f'{self.name}_embedding')
     
     def train_step(self, tensor: tensors.GraphTensor) -> dict[str, float]:
