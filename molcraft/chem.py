@@ -11,6 +11,7 @@ from rdkit.Chem import rdMolTransforms
 from rdkit.Chem import rdPartialCharges
 from rdkit.Chem import rdMolDescriptors
 from rdkit.Chem import rdForceFieldHelpers
+from rdkit.Chem import rdFingerprintGenerator
 
 
 class Mol(Chem.Mol):
@@ -579,8 +580,7 @@ def _calc_mmff_energies(
             energies.append(float('nan'))
     return energies
 
-
-def _split_mol_by_confs(mol: Mol) -> list[Mol]:
+def unpack_conformers(mol: Mol) -> list[Mol]:
     mols = []
     for conf in mol.get_conformers():
         new_mol = Chem.Mol(mol)
@@ -596,5 +596,3 @@ def warn(message: str) -> None:
         category=UserWarning,
         stacklevel=1,
     )
-
-    

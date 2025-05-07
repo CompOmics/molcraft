@@ -589,7 +589,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
             edge_feature = self.bond_features(mol)
 
         edge = {}
-        mols = chem._split_mol_by_confs(mol)
+        mols = chem.unpack_conformers(mol)
         tensor_list = []
         for i, mol in enumerate(mols):
             node_conformer = copy.deepcopy(node)
