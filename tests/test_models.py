@@ -186,6 +186,7 @@ class TestModel(unittest.TestCase):
                 tensor = models.interpret(model, tensor)
                 self.assertTrue('saliency' in tensor.node)
 
+                tensor = tensor.update({'node': {'saliency': None}})
                 tensor = models.saliency(model, tensor)
                 self.assertTrue('feature_saliency' in tensor.node)
 
