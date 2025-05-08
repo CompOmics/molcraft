@@ -590,6 +590,74 @@ def unpack_conformers(mol: Mol) -> list[Mol]:
         mols.append(new_mol)
     return mols
 
+_fingerprint_types = {
+    'rdkit': rdFingerprintGenerator.GetRDKitFPGenerator,
+    'morgan': rdFingerprintGenerator.GetMorganGenerator,
+    'topological_torsion': rdFingerprintGenerator.GetTopologicalTorsionGenerator,
+    'atom_pair': rdFingerprintGenerator.GetAtomPairGenerator,
+}
+
+def _get_fingerprint(
+    mol: Mol,
+    fp_type: str = 'morgan',
+    binary: bool = True,
+    dtype: str = 'float32',
+    **kwargs,
+) -> np.ndarray:
+    fingerprint: rdFingerprintGenerator.FingerprintGenerator64 = (
+        _fingerprint_types[fp_type](**kwargs)
+    )
+    if not isinstance(mol, Mol):
+        mol = Mol.from_encoding(mol)
+    if binary:
+        fp: np.ndarray = fingerprint.GetFingerprintAsNumPy(mol)
+    else:
+        fp: np.ndarray = fingerprint.GetCountFingerprintAsNumPy(mol)
+    return fp.astype(dtype)
+
+def _rdkit_fingerprint(
+    mol: Chem.Mol, 
+    size: int = 2048, 
+    *,
+    min_path: int = 1, 
+    max_path: int = 7, 
+    binary: bool = True,
+    dtype: str = 'float32',
+) -> np.ndarray:
+    fp_param = {'fpSize': size, 'minPath': min_path, 'maxPath': max_path}
+    return _get_fingerprint(mol, 'rdkit', binary, dtype, **fp_param)
+
+def _morgan_fingerprint(
+    mol: Chem.Mol, 
+    size: int = 2048, 
+    *,
+    radius: int = 3, 
+    binary: bool = True,
+    dtype: str = 'float32',
+) -> np.ndarray:
+    fp_param = {'radius': radius, 'fpSize': size}
+    return _get_fingerprint(mol, 'morgan', binary, dtype, **fp_param)
+
+def _topological_torsion_fingerprint(
+    mol: Chem.Mol, 
+    size: int = 2048, 
+    *,
+    binary: bool = True,
+    dtype: str = 'float32',
+) -> np.ndarray:
+    fp_param = {'fpSize': size}
+    return _get_fingerprint(mol, 'topological_torsion', binary, dtype, **fp_param)
+
+def _atom_pair_fingerprint(
+    mol: Chem.Mol, 
+    size: int = 2048, 
+    *,
+    binary: bool = True,
+    dtype: str = 'float32',
+) -> np.ndarray:
+    fp_param = {'fpSize': size}
+    return _get_fingerprint(mol, 'atom_pair', binary, dtype, **fp_param)
+
 def warn(message: str) -> None:
     warnings.warn(
         message=message,
