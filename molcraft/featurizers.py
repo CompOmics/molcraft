@@ -215,7 +215,7 @@ class MolGraphFeaturizer(Featurizer):
         if mol is None:
             warn(
                 f'Could not obtain `chem.Mol` from {x}. '
-                'Proceeding without it.'
+                'Returning `None` (proceeding without it).'
             )
             return None
         
