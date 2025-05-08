@@ -14,7 +14,9 @@ Part 3: Complete modeling pipeline
     import keras 
     import pandas as pd 
 
-    df = pd.read_csv('/path/to/dataset.csv')
+    path = '/path/to/working_directory/' # change this
+
+    df = pd.read_csv(path + 'dataset.csv')
 
     data = df[['smiles_col', 'label_col']].values
     # TODO: Allow label masks for missing labels
@@ -37,17 +39,17 @@ Part 3: Complete modeling pipeline
         self_loops=False,
     )
 
-    records.write(train_data, featurizer, '/path/to/records/train/', overwrite=False)
-    records.write(validation_data, featurizer, '/path/to/records/validation/', overwrite=False)
-    records.write(test_data, featurizer, '/path/to/records/test/', overwrite=False)
+    records.write(train_data, featurizer, path + 'records/train/', overwrite=False)
+    records.write(validation_data, featurizer, path + 'records/validation/', overwrite=False)
+    records.write(test_data, featurizer, path + 'records/test/', overwrite=False)
 
-    train_dataset = records.read('/path/to/records/train/', shuffle_files=True)
+    train_dataset = records.read(path + 'records/train/', shuffle_files=True)
     train_dataset = train_dataset.shuffle(1024).batch(32).prefetch(-1)
 
-    validation_dataset = records.read('/path/to/records/validation/')
+    validation_dataset = records.read(path + 'records/validation/')
     validation_dataset = validation_dataset.batch(128).prefetch(-1)
 
-    test_dataset = records.read('/path/to/records/test/')
+    test_dataset = records.read(path + 'records/test/')
     test_dataset = test_dataset.batch(128).prefetch(-1)
     
     model = models.GraphModel.from_layers(

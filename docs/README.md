@@ -23,4 +23,10 @@ make html
 open _build/html/index.html
 ```
 
+4. Clean documentation
+
+```bash
+make clean
+```
+
 

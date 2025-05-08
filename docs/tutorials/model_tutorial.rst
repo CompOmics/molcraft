@@ -32,9 +32,11 @@ write molecular (sub)graphs to disk and load it as a `tf.data.TFRecordDataset`:
 
     from molcraft import records 
 
+    records_path = '/path/to/records/' # change this
+
     # data = [(SMILES_1, LABEL_1), ..., (SMILES_N, LABEL_N)]
-    records.write(data, featurizer, '/path/to/records/', overwrite=False)
-    dataset = records.read('/path/to/records/').batch(32).prefetch(-1)
+    records.write(data, featurizer, records_path, overwrite=False)
+    dataset = records.read(records_path).batch(32).prefetch(-1)
     model.fit(dataset)
 
 

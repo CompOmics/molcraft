@@ -17,7 +17,70 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
 
     Currently, the `GraphModel` only supports `GraphTensor` input.
 
-    Example (using `from_layers`):
+    Build a subclassed GraphModel:
+
+    >>> import molcraft
+    >>> import keras
+    >>>
+    >>> featurizer = molcraft.featurizers.MolGraphFeaturizer()
+    >>> graph = featurizer([('N[C@@H](C)C(=O)O', 1.0), ('N[C@@H](CS)C(=O)O', 2.0)])
+    >>>
+    >>> @keras.saving.register_keras_serializable()
+    >>> class GraphNeuralNetwork(molcraft.models.GraphModel):
+    ...     def __init__(self, units, **kwargs):
+    ...         super().__init__(**kwargs)
+    ...         self.units = units
+    ...         self.node_embedding = molcraft.layers.NodeEmbedding(self.units)
+    ...         self.edge_embedding = molcraft.layers.EdgeEmbedding(self.units)
+    ...         self.conv_1 = molcraft.layers.GraphTransformer(self.units)
+    ...         self.conv_2 = molcraft.layers.GraphTransformer(self.units)
+    ...         self.readout = molcraft.layers.Readout('mean')
+    ...         self.dense = keras.layers.Dense(1)
+    ...     def propagate(self, graph):
+    ...         x = self.edge_embedding(self.node_embedding(graph))
+    ...         x = self.conv_2(self.conv_1(x))
+    ...         return self.dense(self.readout(x))
+    ...     def get_config(self):
+    ...         config = super().get_config()
+    ...         config['units'] = self.units
+    ...         return config
+    >>>
+    >>> model = GraphNeuralNetwork(128)
+    >>> model.compile(
+    ...     optimizer=keras.optimizers.Adam(1e-3),
+    ...     loss=keras.losses.MeanSquaredError(),
+    ...     metrics=[keras.metrics.MeanAbsolutePercentageError(name='mape')]
+    ... )
+    >>> model.fit(graph, epochs=10)
+    >>> mse, mape = model.evaluate(graph)
+    >>> preds = model.predict(graph)
+
+    Build a functional GraphModel:
+
+    >>> import molcraft
+    >>> import keras
+    >>>
+    >>> featurizer = molcraft.featurizers.MolGraphFeaturizer()
+    >>> graph = featurizer([('N[C@@H](C)C(=O)O', 1.0), ('N[C@@H](CS)C(=O)O', 2.0)])
+    >>>
+    >>> inputs = molcraft.layers.Input(graph.spec)
+    >>> x = molcraft.layers.NodeEmbedding(128)(inputs)
+    >>> x = molcraft.layers.EdgeEmbedding(128)(x)
+    >>> x = molcraft.layers.GraphTransformer(128)(x)
+    >>> x = molcraft.layers.GraphTransformer(128)(x)
+    >>> x = molcraft.layers.Readout('mean')(x)
+    >>> outputs = keras.layers.Dense(1)(x)
+    >>> model = molcraft.models.GraphModel(inputs, outputs)
+    >>> model.compile(
+    ...     optimizer=keras.optimizers.Adam(1e-3),
+    ...     loss=keras.losses.MeanSquaredError(),
+    ...     metrics=[keras.metrics.MeanAbsolutePercentageError(name='mape')]
+    ... )
+    >>> model.fit(graph, epochs=10)
+    >>> mse, mape = model.evaluate(graph)
+    >>> preds = model.predict(graph)
+
+    Build a GraphModel using `from_layers`:
 
     >>> import molcraft 
     >>> import keras
@@ -25,14 +88,14 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     >>> featurizer = molcraft.featurizers.MolGraphFeaturizer()
     >>> graph = featurizer([('N[C@@H](C)C(=O)O', 1.0), ('N[C@@H](CS)C(=O)O', 2.0)])
     >>> 
-    >>> model = molcraft.models.GraphModel.from_layers(
+    >>> model = molcraft.models.GraphModel.from_layers([
     ...     molcraft.layers.Input(graph.spec),
     ...     molcraft.layers.NodeEmbedding(128),
     ...     molcraft.layers.EdgeEmbedding(128),
     ...     molcraft.layers.GraphTransformer(128),
     ...     molcraft.layers.GraphTransformer(128),
     ...     molcraft.layers.Readout('mean'),
-    ...     molcraft.layers.Dense(1)
+    ...     keras.layers.Dense(1)
     ... ])
     >>> model.compile(
     ...     optimizer=keras.optimizers.Adam(1e-3),
@@ -42,6 +105,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     >>> model.fit(graph, epochs=10)
     >>> mse, mape = model.evaluate(graph)
     >>> preds = model.predict(graph)
+
     """
 
     def __new__(cls, *args, **kwargs):
@@ -293,7 +357,43 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
                     f'`{layer_name} is not a `keras.layers.Layer`.'
                 )
         return self.__class__(inputs, outputs, name=f'{self.name}_embedding')
-    
+
+    def backbone(self) -> 'FunctionalGraphModel':
+        if not isinstance(self, FunctionalGraphModel):
+            raise ValueError(
+                'Currently, to extract the backbone part of the model, '
+                'it needs to be a `FunctionalGraphModel`, with a `Readout` '
+                'layer dividing the backbone and the head part of the model.'
+            )
+        inputs = self.input
+        outputs = None
+        for layer in self.layers:
+            if isinstance(layer, layers.Readout):
+                outputs = layer.output
+        if outputs is None:
+            raise ValueError(
+                'Could not extract output. `Readout` layer not found.'
+            )
+        return self.__class__(inputs, outputs, name=f'{self.name}_head')
+
+    def head(self) -> functional.Functional:
+        if not isinstance(self, FunctionalGraphModel):
+            raise ValueError(
+                'Currently, to extract the head part of the model, '
+                'it needs to be a `FunctionalGraphModel`, with a `Readout` '
+                'layer dividing the backbone and the head part of the model.'
+            )
+        inputs = None
+        for layer in self.layers:
+            if isinstance(layer, layers.Readout):
+                inputs = layer.output
+        if inputs is None:
+            raise ValueError(
+                'Could not extract input. `Readout` layer not found.'
+            )
+        outputs = layer.output
+        return keras.models.Model(inputs, outputs, name=f'{self.name}_head')
+
     def train_step(self, tensor: tensors.GraphTensor) -> dict[str, float]:
         y = tensor.context.get('label')
         sample_weight = tensor.context.get('weight')
