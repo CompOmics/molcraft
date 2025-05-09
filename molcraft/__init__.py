@@ -15,3 +15,4 @@ from molcraft import records
 from molcraft import tensors
 from molcraft import callbacks
 from molcraft import datasets
+from molcraft import losses
