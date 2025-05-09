@@ -1918,6 +1918,56 @@ class GaussianDistance(GraphLayer):
         return config
     
 
+@keras.saving.register_keras_serializable(package='molcraft')
+class GaussianParams(keras.layers.Dense):
+    '''Gaussian parameters.
+
+    Computes loc and scale via a dense layer. Should be implemented
+    as the last layer in a model and paired with `losses.GaussianNLL`.
+
+    The loc and scale parameters (resulting from this layer) are concatenated
+    together along the last axis, resulting in a single output tensor. 
+
+    Args:
+        events (int):
+            The number of events. If the model makes a single prediction per example,
+            then the number of events should be 1. If the model makes multiple predictions 
+            per example, then the number of events should be greater than 1. 
+            Default to 1.
+        kwargs:
+            See `keras.layers.Dense` documentation. `activation` will be applied
+            to `loc` only. `scale` is automatically softplus activated.
+    '''
+    def __init__(self, events: int = 1, **kwargs):
+        units = kwargs.pop('units', None)
+        activation = kwargs.pop('activation', None)
+        if units:
+            if units % 2 != 0:
+                raise ValueError(
+                    '`units` needs to be divisble by 2 as `units` = 2 x `events`.'
+                )
+        else:
+            units = int(events * 2)
+        super().__init__(units=units, **kwargs)
+        self.events = events
+        self.loc_activation = keras.activations.get(activation)
+
+    def call(self, inputs, **kwargs):
+        loc_and_scale = super().call(inputs, **kwargs)
+        loc = loc_and_scale[..., :self.events]
+        scale = loc_and_scale[..., self.events:]
+        scale = keras.ops.softplus(scale) + keras.backend.epsilon()
+        loc = self.loc_activation(loc)
+        return keras.ops.concatenate([loc, scale], axis=-1)
+
+    def get_config(self):
+        config = super().get_config()
+        config['events'] = self.events
+        config['units'] = None
+        config['activation'] = keras.activations.serialize(self.loc_activation)
+        return config
+
+
 def Input(spec: tensors.GraphTensor.Spec) -> dict:
     """Used to specify inputs to model.
 
