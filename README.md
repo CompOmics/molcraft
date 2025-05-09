@@ -62,7 +62,7 @@ print(pred)
 # featurizers.save_featurizer(featurizer, '/tmp/featurizer.json')
 # models.save_model(model, '/tmp/model.keras')
 
-# featurizers.load_featurizer('/tmp/featurizer.json')
-# models.load_model('/tmp/model.keras')
+# loaded_featurizer = featurizers.load_featurizer('/tmp/featurizer.json')
+# loaded_model = models.load_model('/tmp/model.keras')
 ```
 
