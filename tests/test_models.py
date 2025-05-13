@@ -1,6 +1,8 @@
 import unittest 
-
+import tempfile
+import shutil
 import keras
+import numpy as np
 
 from molcraft import tensors 
 from molcraft import layers 
@@ -138,9 +140,64 @@ class TestModel(unittest.TestCase):
                 self.assertTrue(isinstance(metrics, list))
                 del model
 
-    # TODO: Write test for saving and loading model: model(tensor) == loaded_model(tensor)
     def test_saved_model(self):
-        pass
+
+        def get_model(tensor):
+            inputs = layers.Input(tensor.spec)
+            x = layers.NodeEmbedding(32)(inputs)
+            x = layers.EdgeEmbedding(32)(x)
+            x = layers.GTConv(32)(x)
+            x = layers.GTConv(32)(x)
+            x = layers.Readout('sum')(x)
+            outputs = keras.layers.Dense(1)(x)
+            return models.GraphModel(inputs, outputs)
+
+        @keras.saving.register_keras_serializable()
+        class Model(models.GraphModel):
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.e1 = layers.NodeEmbedding(32)
+                self.e2 = layers.EdgeEmbedding(32)
+                self.c1 = layers.GTConv(32)
+                self.c2 = layers.GTConv(32)
+                self.r = layers.Readout('sum')
+                self.d = keras.layers.Dense(1)
+            def propagate(self, tensor):
+                return self.d(self.r(self.c2(self.c1(self.e2(self.e1(tensor))))))
+            
+        example = self.tensors[-1]
+
+        tmp_dir = tempfile.mkdtemp()
+        tmp_file = tmp_dir + '/model.keras'
+        with self.subTest(functional_model=True):
+            model = get_model(example)
+            model.compile('adam', 'mse')
+            model.fit(example, verbose=0)
+            model.save(tmp_file)
+            loaded_model = models.load_model(tmp_file)
+            pred_1 = model.predict(example, verbose=0)
+            pred_2 = loaded_model.predict(example, verbose=0)
+            test_preds = np.all(pred_1.round(4) == pred_2.round(4))
+            self.assertTrue(test_preds)
+            test_vars = np.all([np.all((v1 == v2).numpy()) for (v1, v2) in zip(model.variables, loaded_model.variables)])
+            self.assertTrue(test_vars)
+        shutil.rmtree(tmp_dir)
+
+        tmp_dir = tempfile.mkdtemp()
+        tmp_file = tmp_dir + '/model.keras'
+        with self.subTest(functional_model=False):
+            model = Model()
+            model.compile('adam', 'mse')
+            model.fit(example, verbose=0)
+            model.save(tmp_file)
+            loaded_model = models.load_model(tmp_file)
+            pred_1 = model.predict(example, verbose=0)
+            pred_2 = loaded_model.predict(example, verbose=0)
+            test_preds = np.all(pred_1.round(4) == pred_2.round(4))
+            self.assertTrue(test_preds)
+            test_vars = np.all([np.all((v1 == v2).numpy()) for (v1, v2) in zip(model.variables, loaded_model.variables)])
+            self.assertTrue(test_vars)
+        shutil.rmtree(tmp_dir)
 
     def test_subclassed_model(self):
 
