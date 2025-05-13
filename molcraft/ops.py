@@ -67,7 +67,7 @@ def edge_softmax(
     edge_target: tf.Tensor
 ) -> tf.Tensor:
     num_segments = keras.ops.cond(
-        keras.ops.shape(edge_target)[0] > 0,
+        keras.ops.greater(keras.ops.shape(edge_target)[0], 0),
         lambda: keras.ops.maximum(keras.ops.max(edge_target) + 1, 1),
         lambda: 0
     )
@@ -100,7 +100,7 @@ def segment_mean(
 ) -> tf.Tensor:
     if num_segments is None:
         num_segments = keras.ops.cond(
-            keras.ops.shape(segment_ids)[0] > 0,
+            keras.ops.greater(keras.ops.shape(segment_ids)[0], 0),
             lambda: keras.ops.max(segment_ids) + 1,
             lambda: 0
         )
