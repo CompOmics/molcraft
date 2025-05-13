@@ -1231,7 +1231,7 @@ class EGConv3D(GraphConv):
     def __init__(
         self, 
         units: int = 128, 
-        activation: keras.layers.Activation | str | None = None, 
+        activation: keras.layers.Activation | str | None = 'silu', 
         use_bias: bool = True,
         normalize: bool = False,
         **kwargs
@@ -1251,31 +1251,52 @@ class EGConv3D(GraphConv):
                 'which is required for Conv3D layers.'
             )
         self._has_edge_feature = 'feature' in spec.edge
-        self.message_fn = self.get_dense(self.units, activation=self._activation)
-        self.dense_position = self.get_dense(1, use_bias=False, kernel_initializer='zeros')
+        self._message_feedforward_intermediate = self.get_dense(
+            self.units, activation=self._activation
+        )
+        self._message_feedforward_final = self.get_dense(
+            self.units, activation=self._activation
+        )
+
+        self._coord_feedforward_intermediate = self.get_dense(
+            self.units, activation=self._activation
+        ) 
+        self._coord_feedforward_final = self.get_dense(
+            1, use_bias=False, activation='tanh'
+        )
 
         has_overridden_update = self.__class__.update != EGConv3D.update 
         if not has_overridden_update:
-            self.update_fn = self.get_dense(self.units, activation=self._activation)
-            self.output_dense = self.get_dense(self.units)
+            self._feedforward_intermediate = self.get_dense(
+                self.units, activation=self._activation
+            )
+            self._feedforward_output = self.get_dense(self.units)
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         relative_node_coordinate = keras.ops.subtract(
             tensor.gather('coordinate', 'target'), 
             tensor.gather('coordinate', 'source')
         ) 
-        euclidean_distance = keras.ops.sum(
-            keras.ops.square(
-                relative_node_coordinate
-            ), 
+        squared_distance = keras.ops.sum(
+            keras.ops.square(relative_node_coordinate), 
             axis=-1, 
             keepdims=True
         )
+    
+        # For numerical stability (i.e., to prevent NaN losses), this implementation of `EGConv3D` 
+        # either needs to apply a `tanh` activation to the output of `self._coord_feedforward_final`, 
+        # or normalize `relative_node_cordinate` as follows:
+        #
+        # norm = keras.ops.sqrt(squared_distance) + keras.backend.epsilon()
+        # relative_node_coordinate /= norm
+        #
+        # For now, this implementation does the former.
+
         feature = keras.ops.concatenate(
             [
                 tensor.gather('feature', 'target'), 
                 tensor.gather('feature', 'source'), 
-                euclidean_distance, 
+                squared_distance, 
             ], 
             axis=-1
         )
@@ -1287,10 +1308,15 @@ class EGConv3D(GraphConv):
                 ], 
                 axis=-1
             )
-        message = self.message_fn(feature)
+        message = self._message_feedforward_final(
+            self._message_feedforward_intermediate(feature)
+        )
+
         relative_node_coordinate = keras.ops.multiply(
-            relative_node_coordinate,
-            self.dense_position(message)
+            relative_node_coordinate, 
+            self._coord_feedforward_final(
+                self._coord_feedforward_intermediate(message)
+            )
         )
         return tensor.update(
             {
@@ -1302,26 +1328,26 @@ class EGConv3D(GraphConv):
         )
 
     def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        # coefficient = keras.ops.bincount(
-        #     tensor.edge['source'], 
-        #     minlength=tensor.num_nodes
-        # )
-        # coefficient = keras.ops.cast(
-        #     coefficient, tensor.node['coordinate'].dtype
-        # )
-        # coefficient = keras.ops.expand_dims(
-        #     keras.ops.divide_no_nan(1, coefficient), axis=1
-        # )  
+        coordinate = tensor.node['coordinate']
+        coordinate += tensor.aggregate('relative_node_coordinate', mode='mean')
 
-        updated_coordinate = tensor.aggregate('relative_node_coordinate', mode='mean')# * coefficient
-        updated_coordinate += tensor.node['coordinate']
-
+        # Original implementation seems to apply sum aggregation, which does not
+        # seem work well for this implementation of `EGConv3D`, as it causes 
+        # large output values and large initial losses. The magnitude of the 
+        # aggregated values of a sum aggregation depends on the number of 
+        # neighbors, which may be many and may differ from node to node (or 
+        # graph to graph). Therefore, a mean mean aggregation is performed 
+        # instead:
         aggregate = tensor.aggregate('message', mode='mean')
+
+        # Simply added to silence warning ('no gradients for variables ...')
+        aggregate += (0.0 * keras.ops.sum(coordinate))
+
         return tensor.update(
             {
                 'node': {
                     'aggregate': aggregate, 
-                    'coordinate': updated_coordinate,
+                    'coordinate': coordinate,
                 },
                 'edge': {
                     'message': None,
@@ -1331,16 +1357,16 @@ class EGConv3D(GraphConv):
         ) 
 
     def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        updated_node_feature = self.update_fn(
-            keras.ops.concatenate(
-                [
-                    tensor.node['aggregate'], 
-                    tensor.node['feature']
-                ], 
-                axis=-1
-            )
+        feature = keras.ops.concatenate(
+            [
+                tensor.node['aggregate'], 
+                tensor.node['feature']
+            ], 
+            axis=-1
+        )
+        updated_node_feature = self._feedforward_output(
+            self._feedforward_intermediate(feature)
         )  
-        updated_node_feature = self.output_dense(updated_node_feature)
         return tensor.update(
             {
                 'node': {
@@ -1694,8 +1720,8 @@ class EdgeEmbedding(GraphLayer):
             mask = keras.ops.expand_dims(mask, -1)
             feature = keras.ops.where(mask, self._mask_feature, feature)
         elif self._allow_masking:
-            # Slience warning of 'no gradients for variables'
-            feature = feature + (self._mask_feature * 0.0)
+            # Simply added to silence warning ('no gradients for variables ...')
+            feature += (0.0 * self._mask_feature)
 
         if self._normalize:
             feature = self._norm(feature)
