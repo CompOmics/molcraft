@@ -400,7 +400,6 @@ def embed_conformers(
     mol: Mol, 
     num_conformers: int, 
     method: str = 'ETKDGv3',
-    force: bool = True,
     **kwargs
 ) -> None:
     available_embedding_methods = {
@@ -411,27 +410,38 @@ def embed_conformers(
         'srETKDGv3': rdDistGeom.srETKDGv3(),
         'KDG': rdDistGeom.KDG()
     }
-    default_embedding_method = 'ETKDGv3'
     mol = Mol(mol)
-    params = available_embedding_methods.get(method)
-    if params is None:
-        warn(
-            f"Could not find `method` {method}. "
-            f"Automatically setting method to {default_embedding_method}."
+    embedding_method = available_embedding_methods.get(method)
+    if embedding_method is None:
+        raise ValueError(
+            f'Could not find `method` {method!r}. Specify either of: '
+            '`ETDG`, `ETKDG`, `ETKDGv2`, `ETKDGv3`, `srETKDGv3` or `KDG`.'
         )
-        params = available_embedding_methods[default_embedding_method]
-    for key, value in kwargs.items():
-        setattr(params, key, value)
 
-    success = rdDistGeom.EmbedMultipleConfs(mol, numConfs=num_conformers, params=params)
+    for key, value in kwargs.items():
+        setattr(embedding_method, key, value)
+
+    success = rdDistGeom.EmbedMultipleConfs(
+        mol, numConfs=num_conformers, params=embedding_method
+    )
     if not len(success):
-        warning = 'Could not embed conformer(s).'
-        if not force:
-            warn(warning)
+        warn(
+            f'Could not embed conformer(s) for {mol.canonical_smiles!r} using the '
+            'speified method. Giving it another try with more permissive methods.'
+        )
+        max_attempts = (20 * mol.num_atoms) # increasing it from 10xN to 20xN
+        for fallback_method in [method, 'ETDG', 'KDG']:
+            fallback_embedding_method = available_embedding_methods[fallback_method]
+            fallback_embedding_method.useRandomCoords = True
+            success = rdDistGeom.EmbedMultipleConfs(
+                mol, numConfs=num_conformers, maxAttempts=max_attempts, params=fallback_embedding_method
+            )
+            if len(success):
+                break
         else:
-            solution = ' Embedding a conformer (in 3D space) using (x, y) coordinates.'
-            warn(warning + solution)
-            rdDepictor.Compute2DCoords(mol)
+            raise RuntimeError(
+                f'Could not embed conformer(s) for {mol.canonical_smiles!r}. '
+            )
     return mol
 
 def optimize_conformers(
@@ -445,6 +455,11 @@ def optimize_conformers(
     available_force_field_methods = [
         'MMFF', 'MMFF94', 'MMFF94s', 'UFF'
     ]
+    if method not in available_force_field_methods:
+        raise ValueError(
+            f'Could not find `method` {method!r}. Specify either of: '
+            '`UFF`, `MMFF`, `MMFF94` or `MMFF94s`.'
+        )
     mol = Mol(mol)
     try:
         if method.startswith('MMFF'):
@@ -469,7 +484,7 @@ def optimize_conformers(
     except RuntimeError as e:
         warn(
             f'{method} force field minimization raised {e}. '
-            '\nProceeding without force field minimization...'
+            '\nProceeding without force field minimization.'
         )
     return mol
 

@@ -24,19 +24,16 @@ class ConformerEmbedder(ConformerProcessor):
         self, 
         method: str = 'ETKDGv3',
         num_conformers: int = 5, 
-        force: bool = True,
         **kwargs,
     ) -> None:
         self.method = method 
         self.num_conformers = num_conformers 
-        self.force = force
         self.kwargs = kwargs 
 
     def get_config(self) -> dict:
         config = {
             'method': self.method, 
             'num_conformers': self.num_conformers, 
-            'force': self.force, 
         }
         config.update({
             k: v for (k, v) in self.kwargs.items()
@@ -48,7 +45,6 @@ class ConformerEmbedder(ConformerProcessor):
             mol, 
             method=self.method,
             num_conformers=self.num_conformers,
-            force=self.force,
             **self.kwargs,
         )
 
