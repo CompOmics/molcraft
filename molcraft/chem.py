@@ -433,8 +433,9 @@ def embed_conformers(
         for fallback_method in [method, 'ETDG', 'KDG']:
             fallback_embedding_method = available_embedding_methods[fallback_method]
             fallback_embedding_method.useRandomCoords = True
+            fallback_embedding_method.maxAttempts = max_attempts
             success = rdDistGeom.EmbedMultipleConfs(
-                mol, numConfs=num_conformers, maxAttempts=max_attempts, params=fallback_embedding_method
+                mol, numConfs=num_conformers, params=fallback_embedding_method
             )
             if len(success):
                 break
