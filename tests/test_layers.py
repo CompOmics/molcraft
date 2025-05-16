@@ -220,7 +220,9 @@ class TestLayer(unittest.TestCase):
                 for skip_connect in [True, False, 'weighted']:
                     for normalize in [True, False, 'batch']:
                         with self.subTest(i=i, skip_connect=skip_connect, normalize=normalize, flat=True):
-                            output = layers.MPConv3D(128, skip_connect=skip_connect, normalize=normalize)(tensor)
+                            layer = layers.MPConv(128, skip_connect=skip_connect, normalize=normalize)
+                            output = layer(tensor)
+                            self.assertTrue(layer.has_node_coordinate)
                             self.assertTrue(output.node['feature'].shape[-1] == 128)
                             self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
                             if not drop_edge_feature:
@@ -248,7 +250,9 @@ class TestLayer(unittest.TestCase):
                 for skip_connect in [True, False, 'weighted']:
                     for normalize in [True, False, 'batch']:
                         with self.subTest(i=i, skip_connect=skip_connect, normalize=normalize, flat=True):
-                            output = layers.EGConv3D(128, skip_connect=skip_connect, normalize=normalize)(tensor)
+                            layer = layers.EGConv(128, skip_connect=skip_connect, normalize=normalize)
+                            output = layer(tensor)
+                            self.assertTrue(layer.has_node_coordinate)
                             self.assertTrue(output.node['feature'].shape[-1] == 128)
                             self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
                             if not drop_edge_feature:
@@ -276,7 +280,9 @@ class TestLayer(unittest.TestCase):
                 for skip_connect in [True, False, 'weighted']:
                     for normalize in [True, False, 'batch']:
                         with self.subTest(i=i, skip_connect=skip_connect, normalize=normalize, flat=True):
-                            output = layers.GTConv3D(128, skip_connect=skip_connect, normalize=normalize)(tensor)
+                            layer = layers.GTConv(128, skip_connect=skip_connect, normalize=normalize)
+                            output = layer(tensor)
+                            self.assertTrue(layer.has_node_coordinate)
                             self.assertTrue(output.node['feature'].shape[-1] == 128)
                             self.assertTrue(output.node['coordinate'].shape[-1] == tensor.node['coordinate'].shape[-1])
                             if not drop_edge_feature:

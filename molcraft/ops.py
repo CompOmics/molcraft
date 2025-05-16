@@ -148,3 +148,14 @@ def euclidean_distance(
             keepdims=True
         )
     )
+
+def displacement(
+    x1: tf.Tensor,
+    x2: tf.Tensor,
+    normalize: bool = False,
+    axis=-1,
+) -> tf.Tensor:
+    displacement = keras.ops.subtract(x1, x2)
+    if not normalize:
+        return displacement
+    return displacement / euclidean_distance(x1, x2, axis=axis)

@@ -274,20 +274,14 @@ class GraphConv(GraphLayer):
         units (int):
             Dimensionality of the output space.
         activation (keras.layers.Activation, str, None):
-            Activation function to use. If not specified, a linear activation (a(x) = x) is used.
-            Default to `None`.
+            Activation function to be accessed via `self.activation`, and used for the 
+            `message()` and `update()` methods, if not overriden. Default to `relu`.
         use_bias (bool):
-            Whether bias should be used in dense layers. Default to `True`.
+            Whether bias should be used in the dense layers. Default to `True`.
         normalize (bool, str):
-            Whether `LayerNormalization` should be applied to the final node feature output.
-            To use `BatchNormalization`, specify `batch_norm`. Default to `False`.
-        skip_connect (bool, str):
-            Whether node feature input should be added to the node feature output. 
-            If node feature input dim is not equal to `units` (node feature output dim), 
-            a projection layer will automatically project the residual before adding it 
-            to the output. To use weighted skip connection, 
-            specify `weighted`. The weight multiplied with the skip connection is a 
-            learnable scalar. Default to `True`.
+            Whether normalization should be applied to the final output. Default to `False`.
+        skip_connect (bool):
+            Whether node feature input should be added to the node feature output. Default to `True`.
         kernel_initializer (keras.initializers.Initializer, str):
             Initializer for the kernel weight matrix of the dense layers.
             Default to `glorot_uniform`.
@@ -314,10 +308,10 @@ class GraphConv(GraphLayer):
     def __init__(
         self, 
         units: int = None, 
-        activation: str | keras.layers.Activation | None = None,
+        activation: str | keras.layers.Activation | None = 'relu',
         use_bias: bool = True,
-        normalize: bool | str = False,
-        skip_connect: bool | str = True, 
+        normalize: bool = False,
+        skip_connect: bool = True,
         **kwargs
     ) -> None:
         super().__init__(use_bias=use_bias, **kwargs)
@@ -341,56 +335,55 @@ class GraphConv(GraphLayer):
     def units(self):
         return self._units 
     
+    @property
+    def activation(self):
+        return self._activation
+    
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         if not self.units:
             raise ValueError(
                 f'`self.units` needs to be a positive integer. Found: {self.units}.'
             )
         node_feature_dim = spec.node['feature'].shape[-1]
-        self._project_input_node_feature = (
+        self._project_residual = (
             self._skip_connect and (node_feature_dim != self.units)
         )
-        if self._project_input_node_feature:
+        if self._project_residual:
             warn(
                 '`skip_connect` is set to `True`, but found incompatible dim ' 
                 'between input (node feature dim) and output (`self.units`). '
                 'Automatically applying a projection layer to residual to '
                 'match input and output. '
             )
-            self._residual_projection = self.get_dense(
-                self.units, name='residual_projection'
+            self._residual_dense = self.get_dense(
+                self.units, name='residual_dense'
             )
 
-        skip_connect = str(self._skip_connect).lower()
-        self._use_weighted_skip_connection = skip_connect.startswith('weight')
-        if self._use_weighted_skip_connection:
-            self._skip_connection_weight = self.add_weight(
-                name='skip_connection_weight', 
-                shape=(), 
-                initializer='ones',
-                trainable=True,
-            )
-
-        if self._normalize:
-            if str(self._normalize).lower().startswith('batch'):
-                self._output_norm = keras.layers.BatchNormalization(
-                    name='output_batch_norm'
-                )
-            else:
-                self._output_norm = keras.layers.LayerNormalization(
-                    name='output_layer_norm'
-                )
-
-        self._has_edge_feature = 'feature' in spec.edge 
+        self.has_edge_feature = 'feature' in spec.edge
+        self.has_node_coordinate = 'coordinate' in spec.node
 
         has_overridden_message = self.__class__.message != GraphConv.message 
         if not has_overridden_message:
-            self._message_dense = self.get_dense(self.units)
+            self._message_intermediate_dense = self.get_dense(self.units)
+            self._message_intermediate_activation = self.activation
+            self._message_final_dense = self.get_dense(self.units)
+
+        has_overridden_aggregate = self.__class__.message != GraphConv.aggregate 
+        if not has_overridden_aggregate:
+            pass
 
         has_overridden_update = self.__class__.update != GraphConv.update 
         if not has_overridden_update:
-            self._output_dense = self.get_dense(self.units)
-            self._output_activation = self._activation
+            self._update_intermediate_dense = self.get_dense(self.units)
+            self._update_intermediate_activation = self.activation
+            self._update_final_dense = self.get_dense(self.units)
+
+        if not self._normalize:
+            self._normalization = keras.layers.Identity()
+        elif str(self._normalize).lower().startswith('layer'):
+            self._normalization = keras.layers.LayerNormalization()
+        else:
+            self._normalization = keras.layers.BatchNormalization()
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Forward pass.
@@ -402,10 +395,10 @@ class GraphConv(GraphLayer):
                 A `GraphTensor` instance.
         """
         if self._skip_connect:
-            input_node_feature = tensor.node['feature']
-            if self._project_input_node_feature:
-                input_node_feature = self._residual_projection(input_node_feature)
- 
+            residual = tensor.node['feature']
+            if self._project_residual:
+                residual = self._residual_dense(residual)
+
         message = self.message(tensor)
         if not isinstance(message, tensors.GraphTensor):
             message = tensor.update({'edge': {'message': message}})
@@ -417,24 +410,24 @@ class GraphConv(GraphLayer):
             aggregate = tensor.update({'node': {'aggregate': aggregate}})
         elif not 'aggregate' in aggregate.node:
             raise ValueError('Could not find `aggregate` in `node` output.')
-
+            
         update = self.update(aggregate)
         if not isinstance(update, tensors.GraphTensor):
             update = tensor.update({'node': {'feature': update}})
         elif not 'feature' in update.node:
             raise ValueError('Could not find `feature` in `node` output.')
-            
-        updated_node_feature = update.node['feature']
+        
+        if update.node['feature'].shape[-1] != self.units:
+            raise ValueError('Updated node `feature` is not equal to `self.units`.')
+
+        feature = update.node['feature']
 
         if self._skip_connect:
-            if self._use_weighted_skip_connection:
-                input_node_feature *= self._skip_connection_weight
-            updated_node_feature += input_node_feature
-        
-        if self._normalize:
-            updated_node_feature = self._output_norm(updated_node_feature)
+            feature += residual 
 
-        return update.update({'node': {'feature': updated_node_feature}})
+        feature = self._normalization(feature)
+
+        return update.update({'node': {'feature': feature}})
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Compute messages.
@@ -445,24 +438,37 @@ class GraphConv(GraphLayer):
             tensor:
                 The inputted `GraphTensor` instance.
         """
-        if not self._has_edge_feature:
-            message_feature = tensor.gather('feature', 'source')
-        else:
-            message_feature = keras.ops.concatenate(
+        message = keras.ops.concatenate(
+            [
+                tensor.gather('feature', 'source'),
+                tensor.gather('feature', 'target'),
+            ],
+            axis=-1
+        )
+        if self.has_edge_feature:
+            message = keras.ops.concatenate(
                 [
-                    tensor.gather('feature', 'source'),
+                    message, 
                     tensor.edge['feature']
                 ], 
                 axis=-1
             )
-        message = self._message_dense(message_feature)
-        return tensor.update(
-            {
-                'edge': {
-                    'message': message
-                }
-            }
-        )
+        if self.has_node_coordinate:
+            euclidean_distance = ops.euclidean_distance(
+                tensor.gather('coordinate', 'source'),
+                tensor.gather('coordinate', 'target'),
+            )
+            message = keras.ops.concatenate(
+                [
+                    message,
+                    euclidean_distance
+                ],
+                axis=-1
+            )
+        message = self._message_intermediate_dense(message)
+        message = self._message_intermediate_activation(message)
+        message = self._message_final_dense(message)
+        return tensor.update({'edge': {'message': message}})
 
     def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Aggregates messages.
@@ -477,9 +483,7 @@ class GraphConv(GraphLayer):
         return tensor.update(
             {
                 'node': {
-                    'aggregate': aggregate,
-                },
-                'edge': {
+                    'aggregate': aggregate, 
                     'message': None
                 }
             }
@@ -495,21 +499,18 @@ class GraphConv(GraphLayer):
                 A `GraphTensor` instance containing aggregated messages 
                 (updated node features).
         """
-        feature = keras.ops.concatenate(
-            [
-                tensor.node['aggregate'],
-                tensor.node['feature']
-            ],
-            axis=-1
-        )
-        update = self._output_dense(feature)
-        update = self._output_activation(update)
+        aggregate = tensor.node['aggregate']
+        previous = tensor.node['feature']
+        aggregate = keras.ops.concatenate([aggregate, previous], axis=-1)
+        node_feature = self._update_intermediate_dense(aggregate)
+        node_feature = self._update_intermediate_activation(node_feature)
+        node_feature = self._update_final_dense(node_feature)
         return tensor.update(
             {
                 'node': {
-                    'feature': update,
+                    'feature': node_feature,
                     'aggregate': None,
-                }
+                },
             }
         )
 
@@ -563,14 +564,16 @@ class GIConv(GraphConv):
         activation: keras.layers.Activation | str | None = 'relu',
         use_bias: bool = True,
         normalize: bool = False,
+        skip_connect: bool = True,
         update_edge_feature: bool = True,
         **kwargs,
     ):
         super().__init__(
             units=units, 
             activation=activation,
-            normalize=normalize, 
             use_bias=use_bias, 
+            normalize=normalize, 
+            skip_connect=skip_connect,
             **kwargs
         )
         self._update_edge_feature = update_edge_feature
@@ -585,8 +588,7 @@ class GIConv(GraphConv):
             trainable=True,
         )
 
-        self._has_edge_feature = 'feature' in spec.edge
-        if self._has_edge_feature:
+        if self.has_edge_feature:
             edge_feature_dim = spec.edge['feature'].shape[-1]
 
             if not self._update_edge_feature:
@@ -603,19 +605,14 @@ class GIConv(GraphConv):
         else:
             self._update_edge_feature = False
 
-        has_overridden_update = self.__class__.update != GIConv.update 
-        if not has_overridden_update:
-            self._feedforward_intermediate_dense = self.get_dense(self.units)
-            self._feedforward_activation = self._activation
-            self._feedforward_output_dense = self.get_dense(self.units)
-
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         message = tensor.gather('feature', 'source')
         edge_feature = tensor.edge.get('feature')
         if self._update_edge_feature:
             edge_feature = self._edge_dense(edge_feature)
-        if self._has_edge_feature:
+        if self.has_edge_feature:
             message += edge_feature
+            message = keras.ops.relu(message)
         return tensor.update(
             {
                 'edge': {
@@ -635,20 +632,6 @@ class GIConv(GraphConv):
                 },
                 'edge': {
                     'message': None,
-                }
-            }
-        )
-    
-    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        node_feature = tensor.node['aggregate']
-        node_feature = self._feedforward_intermediate_dense(node_feature)
-        node_feature = self._feedforward_activation(node_feature)
-        node_feature = self._feedforward_output_dense(node_feature)
-        return tensor.update(
-            {
-                'node': {
-                    'feature': node_feature,
-                    'aggregate': None,
                 }
             }
         )
@@ -701,15 +684,16 @@ class GAConv(GraphConv):
         activation: keras.layers.Activation | str | None = "relu",
         use_bias: bool = True,
         normalize: bool = False,
+        skip_connect: bool = True,
         update_edge_feature: bool = True,
-        attention_activation: keras.layers.Activation | str | None = "leaky_relu",
         **kwargs,
     ) -> None:
         super().__init__(
             units=units, 
             activation=activation,
-            use_bias=use_bias,
             normalize=normalize, 
+            use_bias=use_bias,
+            skip_connect=skip_connect,
             **kwargs
         )
         self._heads = heads
@@ -717,7 +701,6 @@ class GAConv(GraphConv):
             raise ValueError(f"units need to be divisible by heads.")
         self._head_units = self.units // self.heads 
         self._update_edge_feature = update_edge_feature
-        self._attention_activation = keras.activations.get(attention_activation)
 
     @property 
     def heads(self):
@@ -728,8 +711,7 @@ class GAConv(GraphConv):
         return self._head_units 
 
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        self._has_edge_feature = 'feature' in spec.edge 
-        self._update_edge_feature = self._has_edge_feature and self._update_edge_feature
+        self._update_edge_feature = self.has_edge_feature and self._update_edge_feature
         if self._update_edge_feature:
             self._edge_dense = self.get_einsum_dense(
                 'ijh,jkh->ikh', (self.head_units, self.heads)
@@ -747,12 +729,6 @@ class GAConv(GraphConv):
             'ij,jkh->ikh', (self.head_units, self.heads)
         )
 
-        has_overridden_update = self.__class__.update != GAConv.update 
-        if not has_overridden_update:
-            self._feedforward_intermediate_dense = self.get_dense(self.units)
-            self._feedforward_activation = self._activation
-            self._feedforward_output_dense = self.get_dense(self.units)
-
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         attention_feature = keras.ops.concatenate(
             [
@@ -761,7 +737,7 @@ class GAConv(GraphConv):
             ], 
             axis=-1
         )
-        if self._has_edge_feature:
+        if self.has_edge_feature:
             attention_feature = keras.ops.concatenate(
                 [
                     attention_feature, 
@@ -778,7 +754,7 @@ class GAConv(GraphConv):
             edge_feature = self._edge_dense(attention_feature)
             edge_feature = keras.ops.reshape(edge_feature, (-1, self.units))
         
-        attention_feature = self._attention_activation(attention_feature)
+        attention_feature = keras.ops.leaky_relu(attention_feature)
         attention_score = self._attention_dense(attention_feature)
         attention_score = ops.edge_softmax(
             score=attention_score, edge_target=tensor.edge['target']
@@ -810,28 +786,72 @@ class GAConv(GraphConv):
             }
         )
     
-    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        node_feature = tensor.node['aggregate']
-        node_feature = self._feedforward_intermediate_dense(node_feature)
-        node_feature = self._feedforward_activation(node_feature)
-        node_feature = self._feedforward_output_dense(node_feature)
-        return tensor.update(
-            {
-                'node': {
-                    'feature': node_feature,
-                    'aggregate': None,
-                }
-            }
-        )
-    
     def get_config(self) -> dict:
         config = super().get_config()
         config.update({
             "heads": self._heads,
             'update_edge_feature': self._update_edge_feature,
-            'attention_activation': keras.activations.serialize(self._attention_activation),
         })
         return config
+    
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class MPConv(GraphConv):
+
+    """Message passing neural network layer.
+    """
+
+    def __init__(
+        self, 
+        units: int = 128, 
+        activation: keras.layers.Activation | str | None = 'relu', 
+        use_bias: bool = True,
+        normalize: bool = False,
+        skip_connect: bool = True,
+        **kwargs
+    ) -> None:
+        super().__init__(
+            units=units, 
+            activation=activation,
+            use_bias=use_bias,
+            normalize=normalize, 
+            skip_connect=skip_connect,
+            **kwargs
+        )
+
+    def build(self, spec: tensors.GraphTensor.Spec) -> None:
+        node_feature_dim = spec.node['feature'].shape[-1]
+        self.update_fn = keras.layers.GRUCell(self.units)
+        self._project_previous_node_feature = node_feature_dim != self.units
+        if self._project_previous_node_feature:
+            warn(
+                'Input node feature dim does not match updated node feature dim. '
+                'To make sure input node feature can be passed as `states` to the '
+                'GRU cell, it will automatically be projected prior to it.'
+            )
+            self._previous_node_dense = self.get_dense(self.units)
+
+    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        previous = tensor.node['feature']
+        aggregate = tensor.node['aggregate']
+        if self._project_previous_node_feature:
+            previous = self._previous_node_dense(previous)
+        updated_node_feature, _ = self.update_fn(
+            inputs=aggregate, states=previous
+        )
+        return tensor.update(
+            {
+                'node': {
+                    'feature': updated_node_feature,
+                    'aggregate': None,
+                }
+            }
+        )
+
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config.update({})
+        return config 
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -875,14 +895,16 @@ class GTConv(GraphConv):
         activation: keras.layers.Activation | str | None = "relu",
         use_bias: bool = True,
         normalize: bool = False,
+        skip_connect: bool = True,
         attention_dropout: float = 0.0,
         **kwargs,
     ) -> None:
         super().__init__(
             units=units, 
             activation=activation,
-            use_bias=use_bias,
             normalize=normalize, 
+            use_bias=use_bias,
+            skip_connect=skip_connect,
             **kwargs
         )
         self._heads = heads
@@ -900,6 +922,8 @@ class GTConv(GraphConv):
         return self._head_units 
     
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
+        """Builds the layer.
+        """
         self._query_dense = self.get_einsum_dense(
             'ij,jkh->ikh', (self.head_units, self.heads)
         )
@@ -911,217 +935,28 @@ class GTConv(GraphConv):
         )
         self._output_dense = self.get_dense(self.units)
         self._softmax_dropout = keras.layers.Dropout(self._attention_dropout) 
-
         self._add_bias = not 'bias' in spec.edge
-
         if self._add_bias:
             self._edge_bias = EdgeBias(biases=self.heads)
-
-        has_overridden_update = self.__class__.update != GTConv.update 
-        if not has_overridden_update:
-            self._feedforward_intermediate_dense = self.get_dense(self.units)
-            self._feedforward_activation = self._activation
-            self._feedforward_output_dense = self.get_dense(self.units)
+            if self.has_node_coordinate:
+                node_feature_dim = spec.node['feature'].shape[-1]
+                kernels = self.units
+                self._gaussian_basis = GaussianDistance(kernels)
+                self._centrality_dense = self.get_dense(units=node_feature_dim)
+                self._gaussian_edge_bias = self.get_dense(self.heads) 
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        node_feature = tensor.node['feature']
+
         if self._add_bias:
             edge_bias = self._edge_bias(tensor)
-            tensor = tensor.update(
-                {
-                    'edge': {
-                        'bias': edge_bias
-                    }
-                }
-            )
-        node_feature = tensor.node['feature']
-        
-        query = self._query_dense(node_feature)
-        key = self._key_dense(node_feature)
-        value = self._value_dense(node_feature)
-
-        query = ops.gather(query, tensor.edge['source'])
-        key = ops.gather(key, tensor.edge['target'])
-        value = ops.gather(value, tensor.edge['source'])
-
-        attention_score = keras.ops.sum(query * key, axis=1, keepdims=True)
-        attention_score /= keras.ops.sqrt(float(self.head_units))
-            
-        attention_score += keras.ops.expand_dims(tensor.edge['bias'], axis=1)
-        attention = ops.edge_softmax(attention_score, tensor.edge['target'])
-        attention = self._softmax_dropout(attention)
-        message = ops.edge_weight(value, attention)
-
-        return tensor.update(
-            {
-                'edge': {
-                    'message': message
-                },
-            }
-        )
-
-    def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        node_feature = tensor.aggregate('message', mode='sum')
-        node_feature = keras.ops.reshape(node_feature, (-1, self.units))
-        node_feature = self._output_dense(node_feature)
-        return tensor.update(
-            {
-                'node': {
-                    'aggregate': node_feature,
-                },
-                'edge': {
-                    'message': None,
-                }
-            }
-        )
-
-    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        node_feature = tensor.node['aggregate']
-        node_feature = self._feedforward_intermediate_dense(node_feature)
-        node_feature = self._feedforward_activation(node_feature)
-        node_feature = self._feedforward_output_dense(node_feature)
-        return tensor.update(
-            {
-                'node': {
-                    'feature': node_feature,
-                    'aggregate': None,
-                },
-            }
-        )
-    
-    def get_config(self) -> dict:
-        config = super().get_config()
-        config.update({
-            "heads": self._heads,
-            'attention_dropout': self._attention_dropout,
-        })
-        return config
-    
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class MPConv(GraphConv):
-
-    """Message passing neural network layer.
-    """
-
-    def __init__(
-        self, 
-        units: int = 128, 
-        activation: keras.layers.Activation | str | None = None, 
-        use_bias: bool = True,
-        normalize: bool = False,
-        **kwargs
-    ) -> None:
-        super().__init__(
-            units=units, 
-            activation=activation,
-            use_bias=use_bias,
-            normalize=normalize, 
-            **kwargs
-        )
-
-    def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        node_feature_dim = spec.node['feature'].shape[-1]
-        self.message_fn = self.get_dense(self.units, activation=self._activation)
-        self.update_fn = keras.layers.GRUCell(self.units)
-        self._has_edge_feature = 'feature' in spec.edge
-        self.project_input_node_feature = node_feature_dim != self.units
-        if self.project_input_node_feature:
-            warn(
-                'Input node feature dim does not match updated node feature dim. '
-                'To make sure input node feature can be passed as `states` to the '
-                'GRU cell, it will automatically be projected prior to it.'
-            )
-            self._previous_node_dense = self.get_dense(
-                self.units, activation=self._activation
-            )
-
-    def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        feature = keras.ops.concatenate(
-            [
-                tensor.gather('feature', 'source'),
-                tensor.gather('feature', 'target'),
-            ], 
-            axis=-1
-        )
-        if self._has_edge_feature:
-            feature = keras.ops.concatenate(
-                [
-                    feature,
-                    tensor.edge['feature']
-                ], 
-                axis=-1
-            )
-        message = self.message_fn(feature)
-        return tensor.update(
-            {
-                'edge': {
-                    'message': message,
-                }
-            }
-        )
-
-    def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        aggregate = tensor.aggregate('message', mode='mean')
-        feature = tensor.node['feature']
-        if self.project_input_node_feature:
-            feature = self._previous_node_dense(feature)
-        return tensor.update(
-            {
-                'node': {
-                    'aggregate': aggregate,
-                    'feature': feature,
-                }
-            }
-        )
-
-    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        updated_node_feature, _ = self.update_fn(
-            inputs=tensor.node['aggregate'],
-            states=tensor.node['feature']
-        )
-        return tensor.update(
-            {
-                'node': {
-                    'feature': updated_node_feature,
-                    'aggregate': None,
-                }
-            }
-        )
-
-    def get_config(self) -> dict:
-        config = super().get_config()
-        config.update({})
-        return config 
-    
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class GTConv3D(GTConv):
-
-    """Graph transformer layer 3D.
-    """
-
-    def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        """Builds the layer.
-        """
-        super().build(spec)
-        if self._add_bias:
-            node_feature_dim = spec.node['feature'].shape[-1]
-            kernels = self.units
-            self._gaussian_basis = GaussianDistance(kernels)
-            self._centrality_dense = self.get_dense(units=node_feature_dim)
-            self._gaussian_edge_bias = self.get_dense(self.heads)
-
-    def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        node_feature = tensor.node['feature']
-
-        if self._add_bias:
-            gaussian = self._gaussian_basis(tensor)
-            centrality = keras.ops.segment_sum(
-                gaussian, tensor.edge['target'], tensor.num_nodes
-            )
-            node_feature += self._centrality_dense(centrality)
-
-            edge_bias = self._edge_bias(tensor) + self._gaussian_edge_bias(gaussian)
+            if self.has_node_coordinate:
+                gaussian = self._gaussian_basis(tensor)
+                centrality = keras.ops.segment_sum(
+                    gaussian, tensor.edge['target'], tensor.num_nodes
+                )
+                node_feature += self._centrality_dense(centrality)
+                edge_bias += self._gaussian_edge_bias(gaussian)
             tensor = tensor.update({'edge': {'bias': edge_bias}})
             
         query = self._query_dense(node_feature)
@@ -1136,24 +971,18 @@ class GTConv3D(GTConv):
         attention_score /= keras.ops.sqrt(float(self.head_units))
             
         attention_score += keras.ops.expand_dims(tensor.edge['bias'], axis=1)
-        
         attention = ops.edge_softmax(attention_score, tensor.edge['target'])
         attention = self._softmax_dropout(attention)
 
-        distance = keras.ops.subtract(
-            tensor.gather('coordinate', 'source'),
-            tensor.gather('coordinate', 'target')
-        )
-        euclidean_distance = ops.euclidean_distance(
-            tensor.gather('coordinate', 'source'),
-            tensor.gather('coordinate', 'target'),
-            axis=-1
-        )
-        distance /= euclidean_distance
-
-        attention *= keras.ops.expand_dims(distance, axis=-1)
-        attention = keras.ops.expand_dims(attention, axis=2)
-        value = keras.ops.expand_dims(value, axis=1)
+        if self.has_node_coordinate:
+            displacement = ops.displacement(
+                tensor.gather('coordinate', 'target'),
+                tensor.gather('coordinate', 'source'),
+                normalize=True
+            )
+            attention *= keras.ops.expand_dims(displacement, axis=-1)
+            attention = keras.ops.expand_dims(attention, axis=2)
+            value = keras.ops.expand_dims(value, axis=1)
 
         message = ops.edge_weight(value, attention)
         
@@ -1167,11 +996,14 @@ class GTConv3D(GTConv):
 
     def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         node_feature = tensor.aggregate('message', mode='sum')
-        node_feature = keras.ops.reshape(
-            node_feature, (tensor.num_nodes, -1, self.units)
-        )
+        if self.has_node_coordinate:
+            shape = (tensor.num_nodes, -1, self.units)
+        else:
+            shape = (tensor.num_nodes, self.units)
+        node_feature = keras.ops.reshape(node_feature, shape)
         node_feature = self._output_dense(node_feature)
-        node_feature = keras.ops.sum(node_feature, axis=1)
+        if self.has_node_coordinate:
+            node_feature = keras.ops.sum(node_feature, axis=1)
         return tensor.update(
             {
                 'node': {
@@ -1183,47 +1015,17 @@ class GTConv3D(GTConv):
             }
         )
     
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class MPConv3D(MPConv):
-
-    """Message passing neural network layer 3D.
-    """
-    
-    def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        euclidean_distance = ops.euclidean_distance(
-            tensor.gather('coordinate', 'target'),
-            tensor.gather('coordinate', 'source'),
-            axis=-1
-        )
-        feature = keras.ops.concatenate(
-            [
-                tensor.gather('feature', 'source'),
-                tensor.gather('feature', 'target'),
-                euclidean_distance,
-            ], 
-            axis=-1
-        )
-        if self._has_edge_feature:
-            feature = keras.ops.concatenate(
-                [
-                    feature,
-                    tensor.edge['feature']
-                ], 
-                axis=-1
-            )
-        message = self.message_fn(feature)
-        return tensor.update(
-            {
-                'edge': {
-                    'message': message,
-                }
-            }
-        )
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config.update({
+            "heads": self._heads,
+            'attention_dropout': self._attention_dropout,
+        })
+        return config
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class EGConv3D(GraphConv):
+class EGConv(GraphConv):
 
     """Equivariant graph neural network layer 3D.
     """
@@ -1234,6 +1036,7 @@ class EGConv3D(GraphConv):
         activation: keras.layers.Activation | str | None = 'silu', 
         use_bias: bool = True,
         normalize: bool = False,
+        skip_connect: bool = True,
         **kwargs
     ) -> None:
         super().__init__(
@@ -1241,36 +1044,29 @@ class EGConv3D(GraphConv):
             activation=activation,
             use_bias=use_bias,
             normalize=normalize, 
+            skip_connect=skip_connect,
             **kwargs
         )
 
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        if 'coordinate' not in spec.node:
+        if not self.has_node_coordinate:
             raise ValueError(
                 'Could not find `coordinate`s in node, '
                 'which is required for Conv3D layers.'
             )
-        self._has_edge_feature = 'feature' in spec.edge
         self._message_feedforward_intermediate = self.get_dense(
-            self.units, activation=self._activation
+            self.units, activation=self.activation
         )
         self._message_feedforward_final = self.get_dense(
-            self.units, activation=self._activation
+            self.units, activation=self.activation
         )
 
         self._coord_feedforward_intermediate = self.get_dense(
-            self.units, activation=self._activation
+            self.units, activation=self.activation
         ) 
         self._coord_feedforward_final = self.get_dense(
             1, use_bias=False, activation='tanh'
         )
-
-        has_overridden_update = self.__class__.update != EGConv3D.update 
-        if not has_overridden_update:
-            self._feedforward_intermediate = self.get_dense(
-                self.units, activation=self._activation
-            )
-            self._feedforward_output = self.get_dense(self.units)
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         relative_node_coordinate = keras.ops.subtract(
@@ -1300,7 +1096,7 @@ class EGConv3D(GraphConv):
             ], 
             axis=-1
         )
-        if self._has_edge_feature:
+        if self.has_edge_feature:
             feature = keras.ops.concatenate(
                 [
                     feature,
@@ -1339,7 +1135,7 @@ class EGConv3D(GraphConv):
         # graph to graph). Therefore, a mean mean aggregation is performed 
         # instead:
         aggregate = tensor.aggregate('message', mode='mean')
-
+        aggregate = keras.ops.concatenate([aggregate, tensor.node['feature']], axis=-1)
         # Simply added to silence warning ('no gradients for variables ...')
         aggregate += (0.0 * keras.ops.sum(coordinate))
 
@@ -1355,26 +1151,6 @@ class EGConv3D(GraphConv):
                 }
             }
         ) 
-
-    def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        feature = keras.ops.concatenate(
-            [
-                tensor.node['aggregate'], 
-                tensor.node['feature']
-            ], 
-            axis=-1
-        )
-        updated_node_feature = self._feedforward_output(
-            self._feedforward_intermediate(feature)
-        )  
-        return tensor.update(
-            {
-                'node': {
-                    'feature': updated_node_feature, 
-                    'aggregate': None,
-                },
-            }
-        )
     
     def get_config(self) -> dict:
         config = super().get_config()
@@ -1600,15 +1376,12 @@ class NodeEmbedding(GraphLayer):
         if self._embed_context:
             self._context_dense = self.get_dense(self.dim)
         
-        if self._normalize:
-            if str(self._normalize).lower().startswith('batch'):
-                self._norm = keras.layers.BatchNormalization(
-                    name='output_batch_norm'
-                )
-            else:
-                self._norm = keras.layers.LayerNormalization(
-                    name='output_layer_norm'
-                )
+        if not self._normalize:
+            self._norm = keras.layers.Identity()
+        elif str(self._normalize).lower().startswith('layer'):
+            self._norm = keras.layers.LayerNormalization()
+        else:
+            self._norm = keras.layers.BatchNormalization()
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         feature = self._node_dense(tensor.node['feature'])
@@ -1630,8 +1403,7 @@ class NodeEmbedding(GraphLayer):
         elif self._allow_masking:
             feature = feature + (self._mask_feature * 0.0)
 
-        if self._normalize:
-            feature = self._norm(feature)
+        feature = self._norm(feature)
 
         if not self._allow_reconstruction:
             return tensor.update({'node': {'feature': feature}})
@@ -2025,14 +1797,11 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
     for outer_field, data in spec.__dict__.items():
         inputs[outer_field] = {}
         for inner_field, nested_spec in data.items():
-            if inner_field in ['label', 'weight']:
+            if outer_field == 'context' and inner_field in ['label', 'weight']:
                 # Remove context label and weight from the symbolic input 
                 # as a functional model is strict for what input can be passed.
-                # We want to be able to pass a graph with or without labels 
-                # and sample weights. The __call__ method of the `GraphModel`
-                # temporarily pops label and weight to avoid errors. 
-                if outer_field == 'context':
-                    continue
+                # (We want to train and predict with the model.)
+                continue
             kwargs = {
                 'shape': nested_spec.shape[1:],
                 'dtype': nested_spec.dtype,
@@ -2098,5 +1867,3 @@ def _spec_from_inputs(inputs):
 
 
 GraphTransformer = GTConv
-GraphTransformer3D = GTConv3D
-
