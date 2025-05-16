@@ -799,6 +799,8 @@ class GAConv(GraphConv):
 class MPConv(GraphConv):
 
     """Message passing neural network layer.
+
+    Supports 3D molecular graphs.
     """
 
     def __init__(
@@ -858,6 +860,8 @@ class MPConv(GraphConv):
 class GTConv(GraphConv):
 
     """Graph transformer layer.
+
+    Supports 3D molecular graphs.
 
     >>> graph = molcraft.tensors.GraphTensor(
     ...     context={
@@ -1028,6 +1032,8 @@ class GTConv(GraphConv):
 class EGConv(GraphConv):
 
     """Equivariant graph neural network layer 3D.
+
+    Supports 3D molecular graphs.
     """
 
     def __init__(
