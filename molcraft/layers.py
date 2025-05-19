@@ -1303,17 +1303,12 @@ class NodeEmbedding(GraphLayer):
         dim: int = None, 
         normalize: bool = False,
         embed_context: bool = False,
-        allow_reconstruction: bool = False,
-        allow_masking: bool = False, 
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self.dim = dim
         self._normalize = normalize
         self._embed_context = embed_context
-        self._masking_rate = None
-        self._allow_masking = allow_masking
-        self._allow_reconstruction = allow_reconstruction
 
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         feature_dim = spec.node['feature'].shape[-1]
@@ -1327,8 +1322,6 @@ class NodeEmbedding(GraphLayer):
             self._embed_context = False 
         if self._has_super and not self._embed_context:
             self._super_feature = self.get_weight(shape=[self.dim], name='super_node_feature')
-        if self._allow_masking:
-            self._mask_feature = self.get_weight(shape=[self.dim], name='mask_node_feature')
         if self._embed_context:
             self._context_dense = self.get_dense(self.dim)
         
@@ -1342,28 +1335,18 @@ class NodeEmbedding(GraphLayer):
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         feature = self._node_dense(tensor.node['feature'])
 
-        if self._has_super:
-            super_feature = (0 if self._embed_context else self._super_feature)
+        if self._has_super and not self._embed_context:
             super_mask = keras.ops.expand_dims(tensor.node['super'], 1)
-            feature = keras.ops.where(super_mask, super_feature, feature)
+            feature = keras.ops.where(super_mask, self._super_feature, feature)
 
         if self._embed_context:
             context_feature = self._context_dense(tensor.context['feature'])
             feature = ops.scatter_update(feature, tensor.node['super'], context_feature)
             tensor = tensor.update({'context': {'feature': None}})
 
-        apply_mask = (self._allow_masking and 'mask' in tensor.node)
-        if apply_mask:
-            mask = keras.ops.expand_dims(tensor.node['mask'], -1)
-            feature = keras.ops.where(mask, self._mask_feature, feature)
-        elif self._allow_masking:
-            feature = feature + (self._mask_feature * 0.0)
-
         feature = self._norm(feature)
 
-        if not self._allow_reconstruction:
-            return tensor.update({'node': {'feature': feature}})
-        return tensor.update({'node': {'feature': feature, 'target_feature': feature}})
+        return tensor.update({'node': {'feature': feature}})
 
     def get_config(self) -> dict:
         config = super().get_config()
@@ -1371,8 +1354,6 @@ class NodeEmbedding(GraphLayer):
             'dim': self.dim,
             'normalize': self._normalize,
             'embed_context': self._embed_context,
-            'allow_masking': self._allow_masking,
-            'allow_reconstruction': self._allow_reconstruction,
         })
         return config
     
@@ -1389,39 +1370,30 @@ class EdgeEmbedding(GraphLayer):
         self, 
         dim: int = None, 
         normalize: bool = False,
-        allow_masking: bool = True, 
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self.dim = dim
         self._normalize = normalize
-        self._masking_rate = None
-        self._allow_masking = allow_masking
 
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         feature_dim = spec.edge['feature'].shape[-1]
         if not self.dim:
             self.dim = feature_dim
-        self._edge_dense = self.get_dense(self.dim)
+        self._edge_dense = self.get_dense(self.dim) 
+
+        self._self_loop_feature = self.get_weight(shape=[self.dim], name='self_loop_edge_feature')
 
         self._has_super = 'super' in spec.edge
-        self._has_self_loop = 'self_loop' in spec.edge
         if self._has_super:
             self._super_feature = self.get_weight(shape=[self.dim], name='super_edge_feature')
-        if self._has_self_loop:
-            self._self_loop_feature = self.get_weight(shape=[self.dim], name='self_loop_edge_feature')
-        if self._allow_masking:
-            self._mask_feature = self.get_weight(shape=[self.dim], name='mask_edge_feature')
-
-        if self._normalize:
-            if str(self._normalize).lower().startswith('batch'):
-                self._norm = keras.layers.BatchNormalization(
-                    name='output_batch_norm'
-                )
-            else:
-                self._norm = keras.layers.LayerNormalization(
-                    name='output_layer_norm'
-                )
+        
+        if not self._normalize:
+            self._norm = keras.layers.Identity()
+        elif str(self._normalize).lower().startswith('layer'):
+            self._norm = keras.layers.LayerNormalization()
+        else:
+            self._norm = keras.layers.BatchNormalization()
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         feature = self._edge_dense(tensor.edge['feature'])
@@ -1430,51 +1402,18 @@ class EdgeEmbedding(GraphLayer):
             super_mask = keras.ops.expand_dims(tensor.edge['super'], 1)
             feature = keras.ops.where(super_mask, self._super_feature, feature)
 
-        if self._has_self_loop:
-            self_loop_mask = keras.ops.expand_dims(tensor.edge['self_loop'], 1)
-            feature = keras.ops.where(self_loop_mask, self._self_loop_feature, feature)
-            
-        if (
-            self._allow_masking and 
-            self._masking_rate is not None and 
-            self._masking_rate > 0
-        ):
-            random = keras.random.uniform(shape=[tensor.num_edges])
-            mask = random <= self._masking_rate
-            if self._has_super:
-                mask = keras.ops.logical_and(
-                    mask, keras.ops.logical_not(tensor.edge['super'])
-                )
-            mask = keras.ops.expand_dims(mask, -1)
-            feature = keras.ops.where(mask, self._mask_feature, feature)
-        elif self._allow_masking:
-            # Simply added to silence warning ('no gradients for variables ...')
-            feature += (0.0 * self._mask_feature)
+        self_loop_mask = keras.ops.expand_dims(tensor.edge['source'] == tensor.edge['target'], 1)
+        feature = keras.ops.where(self_loop_mask, self._self_loop_feature, feature)
 
-        if self._normalize:
-            feature = self._norm(feature)
+        feature = self._norm(feature)
 
-        return tensor.update({'edge': {'feature': feature, 'embedding': feature}})
-
-    @property 
-    def masking_rate(self):
-        return self._masking_rate 
-    
-    @masking_rate.setter
-    def masking_rate(self, rate: float):
-        if not self._allow_masking and rate is not None:
-            raise ValueError(
-                f'Cannot set `masking_rate` for layer {self} '
-                'as `allow_masking` was set to `False`.'
-            )
-        self._masking_rate = float(rate)
+        return tensor.update({'edge': {'feature': feature}})
 
     def get_config(self) -> dict:
         config = super().get_config()
         config.update({
             'dim': self.dim,
             'normalize': self._normalize,
-            'allow_masking': self._allow_masking
         })
         return config
     
