@@ -730,9 +730,6 @@ class GAConv(GraphConv):
         self._attention_dense = self.get_einsum_dense(
             'ijh,jkh->ikh', (1, self.heads)
         )
-        self._node_self_dense = self.get_einsum_dense(
-            'ij,jkh->ikh', (self.head_units, self.heads)
-        )
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         attention_feature = keras.ops.concatenate(
@@ -778,7 +775,6 @@ class GAConv(GraphConv):
     
     def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         node_feature = tensor.aggregate('message', mode='sum')
-        node_feature += self._node_self_dense(tensor.node['feature'])
         node_feature = keras.ops.reshape(node_feature, (-1, self.units))
         return tensor.update(
             {
