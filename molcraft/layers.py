@@ -349,11 +349,12 @@ class GraphConv(GraphLayer):
             self._skip_connect and (node_feature_dim != self.units)
         )
         if self._project_residual:
-            warn(
+            warnings.warn(
                 '`skip_connect` is set to `True`, but found incompatible dim ' 
                 'between input (node feature dim) and output (`self.units`). '
                 'Automatically applying a projection layer to residual to '
-                'match input and output. '
+                'match input and output. ',
+                stacklevel=2,
             )
             self._residual_dense = self.get_dense(
                 self.units, name='residual_dense'
@@ -596,10 +597,11 @@ class GIConv(GraphConv):
 
             if not self._update_edge_feature:
                 if (edge_feature_dim != node_feature_dim):
-                    warn(
+                    warnings.warn(
                         'Found edge feature dim to be incompatible with node feature dim. '
                         'Automatically adding a edge feature projection layer to match '
-                        'the dim of node features.'
+                        'the dim of node features.',
+                        stacklevel=2,
                     )
                     self._update_edge_feature = True 
 
@@ -856,10 +858,11 @@ class MPConv(GraphConv):
         self.update_fn = keras.layers.GRUCell(self.units)
         self._project_previous_node_feature = node_feature_dim != self.units
         if self._project_previous_node_feature:
-            warn(
+            warnings.warn(
                 'Input node feature dim does not match updated node feature dim. '
                 'To make sure input node feature can be passed as `states` to the '
-                'GRU cell, it will automatically be projected prior to it.'
+                'GRU cell, it will automatically be projected prior to it.',
+                stacklevel=2
             )
             self._previous_node_dense = self.get_dense(self.units)
 
@@ -995,7 +998,13 @@ class GTConv(GraphConv):
 
         if self.has_node_coordinate:
             node_feature_dim = spec.node['feature'].shape[-1]
-            self._gaussian_basis = GaussianDistance(kernels=self.units)
+            num_kernels = self.units
+            self._gaussian_loc = self.add_weight(
+                shape=[num_kernels], initializer='zeros', dtype='float32', trainable=True
+            ) 
+            self._gaussian_scale = self.add_weight(
+                shape=[num_kernels], initializer='ones', dtype='float32', trainable=True
+            )
             self._centrality_dense = self.get_dense(units=node_feature_dim)
             self._attention_bias_dense_2 = self.get_einsum_dense('ij,jkh->ikh', (1, self.heads))
 
@@ -1003,7 +1012,14 @@ class GTConv(GraphConv):
         node_feature = tensor.node['feature']
 
         if self.has_node_coordinate:
-            gaussian = self._gaussian_basis(tensor)
+            euclidean_distance = ops.euclidean_distance(
+                tensor.gather('coordinate', 'target'),
+                tensor.gather('coordinate', 'source'),
+                axis=-1
+            )
+            gaussian = ops.gaussian(
+                euclidean_distance, self._gaussian_loc, self._gaussian_scale
+            )
             centrality = keras.ops.segment_sum(gaussian, tensor.edge['target'], tensor.num_nodes)
             node_feature += self._centrality_dense(centrality)
 
@@ -1277,146 +1293,6 @@ class Readout(GraphLayer):
         config['mode'] = self.mode 
         return config 
     
-    
-@keras.saving.register_keras_serializable(package='molcraft')
-class GraphNetwork(GraphLayer):
-
-    """Graph neural network.
-
-    Sequentially calls graph layers (`GraphLayer`) and concatenates its output. 
-
-    Arguments:
-        layers (list):
-            A list of graph layers.
-    """
-
-    def __init__(self, layers: list[GraphLayer], **kwargs) -> None:
-        super().__init__(**kwargs)
-        self.layers = layers
-        self._update_edge_feature = False
-
-    def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        units = self.layers[0].units 
-        node_feature_dim = spec.node['feature'].shape[-1]
-        self._update_node_feature = node_feature_dim != units 
-        if self._update_node_feature:
-            warn(
-                'Node feature dim does not match `units` of the first layer. '
-                'Automatically adding a node projection layer to match `units`.'
-            )
-            self._node_dense = self.get_dense(units)
-        self._has_edge_feature = 'feature' in spec.edge 
-        if self._has_edge_feature:
-            edge_feature_dim = spec.edge['feature'].shape[-1]
-            self._update_edge_feature = edge_feature_dim != units
-            if self._update_edge_feature:
-                warn(
-                    'Edge feature dim does not match `units` of the first layer. '
-                    'Automatically adding a edge projection layer to match `units`.'
-                )
-                self._edge_dense = self.get_dense(units)
-
-    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        x = tensors.to_dict(tensor)
-        if self._update_node_feature:
-            x['node']['feature'] = self._node_dense(tensor.node['feature'])
-        if self._has_edge_feature and self._update_edge_feature:
-            x['edge']['feature'] = self._edge_dense(tensor.edge['feature'])
-        outputs = [x['node']['feature']]
-        for layer in self.layers:
-            x = layer(x)
-            outputs.append(x['node']['feature'])
-        return tensor.update(
-            {
-                'node': {
-                    'feature': keras.ops.concatenate(outputs, axis=-1)
-                }    
-            }
-        )
-    
-    def tape_propagate(
-        self,
-        tensor: tensors.GraphTensor,
-        tape: tf.GradientTape,
-        training: bool | None = None,
-    ) -> tuple[tensors.GraphTensor, list[tf.Tensor]]:
-        """Performs the propagation with a `GradientTape`.
-
-        Performs the same forward pass as `propagate` but with a `GradientTape`
-        watching intermediate node features.
-
-        Arguments:
-            tensor (tensors.GraphTensor):
-                The graph input.
-        """
-        if isinstance(tensor, tensors.GraphTensor):
-            x = tensors.to_dict(tensor)
-        else:
-            x = tensor
-        if self._update_node_feature:
-            x['node']['feature'] = self._node_dense(tensor.node['feature'])
-        if self._update_edge_feature:
-            x['edge']['feature'] = self._edge_dense(tensor.edge['feature'])
-        tape.watch(x['node']['feature'])
-        outputs = [x['node']['feature']]
-        for layer in self.layers:
-            x = layer(x, training=training)
-            tape.watch(x['node']['feature'])
-            outputs.append(x['node']['feature'])
-
-        tensor = tensor.update(
-            {
-                'node': {
-                    'feature': keras.ops.concatenate(outputs, axis=-1)
-                }
-            }
-        )
-        return tensor, outputs
-    
-    def get_config(self) -> dict:
-        config = super().get_config()
-        config.update(
-            {
-                'layers': [
-                    keras.layers.serialize(layer) for layer in self.layers
-                ]
-            }
-        )
-        return config
-
-    @classmethod
-    def from_config(cls, config: dict) -> 'GraphNetwork':
-        config['layers'] = [
-            keras.layers.deserialize(layer) for layer in config['layers']
-        ]
-        return super().from_config(config)
-    
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class Extraction(GraphLayer):
-
-    def __init__(
-        self, 
-        field: str, 
-        inner_field: str | None = None, 
-        **kwargs
-    ) -> None:
-        super().__init__(**kwargs)
-        self.field = field 
-        self.inner_field = inner_field
-
-    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        data = dict(getattr(tensor, self.field))
-        if not self.inner_field:
-            return data 
-        return data[self.inner_field]
-     
-    def get_config(self):
-        config = super().get_config()
-        config['field'] = self.field
-        config['inner_field'] = self.inner_field 
-        return config 
-    
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class NodeEmbedding(GraphLayer):
@@ -1608,162 +1484,119 @@ class EdgeEmbedding(GraphLayer):
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class Projection(GraphLayer):
-    """Base graph projection layer.
+class GraphNetwork(GraphLayer):
+
+    """Graph neural network.
+
+    Sequentially calls graph layers (`GraphLayer`) and concatenates its output. 
+
+    Arguments:
+        layers (list):
+            A list of graph layers.
     """
-    def __init__(
-        self, 
-        units: int = None, 
-        activation: str | keras.layers.Activation | None = None, 
-        use_bias: bool = True,
-        field: str = 'node',
-        **kwargs
-    ) -> None:
-        super().__init__(use_bias=use_bias, **kwargs)
-        self.units = units
-        self._activation = keras.activations.get(activation)
-        self.field = field 
+
+    def __init__(self, layers: list[GraphLayer], **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.layers = layers
+        self._update_edge_feature = False
 
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        data = getattr(spec, self.field, None)
-        if data is None:
-            raise ValueError('Could not access field {self.field!r}.')
-        feature_dim = data['feature'].shape[-1]
-        if not self.units:
-            self.units = feature_dim
-        self._dense = self.get_dense(self.units)
+        units = self.layers[0].units 
+        node_feature_dim = spec.node['feature'].shape[-1]
+        self._update_node_feature = node_feature_dim != units 
+        if self._update_node_feature:
+            warnings.warn(
+                'Node feature dim does not match `units` of the first layer. '
+                'Automatically adding a node projection layer to match `units`.',
+                stacklevel=2
+            )
+            self._node_dense = self.get_dense(units)
+        self._has_edge_feature = 'feature' in spec.edge 
+        if self._has_edge_feature:
+            edge_feature_dim = spec.edge['feature'].shape[-1]
+            self._update_edge_feature = edge_feature_dim != units
+            if self._update_edge_feature:
+                warnings.warn(
+                    'Edge feature dim does not match `units` of the first layer. '
+                    'Automatically adding a edge projection layer to match `units`.',
+                    stacklevel=2
+                )
+                self._edge_dense = self.get_dense(units)
 
-    def propagate(self, tensor: tensors.GraphTensor):
-        feature = getattr(tensor, self.field)['feature']
-        feature = self._dense(feature)
-        feature = self._activation(feature)
+    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        x = tensors.to_dict(tensor)
+        if self._update_node_feature:
+            x['node']['feature'] = self._node_dense(tensor.node['feature'])
+        if self._has_edge_feature and self._update_edge_feature:
+            x['edge']['feature'] = self._edge_dense(tensor.edge['feature'])
+        outputs = [x['node']['feature']]
+        for layer in self.layers:
+            x = layer(x)
+            outputs.append(x['node']['feature'])
         return tensor.update(
             {
-                self.field: {
-                    'feature': feature
+                'node': {
+                    'feature': keras.ops.concatenate(outputs, axis=-1)
+                }    
+            }
+        )
+    
+    def tape_propagate(
+        self,
+        tensor: tensors.GraphTensor,
+        tape: tf.GradientTape,
+        training: bool | None = None,
+    ) -> tuple[tensors.GraphTensor, list[tf.Tensor]]:
+        """Performs the propagation with a `GradientTape`.
+
+        Performs the same forward pass as `propagate` but with a `GradientTape`
+        watching intermediate node features.
+
+        Arguments:
+            tensor (tensors.GraphTensor):
+                The graph input.
+        """
+        if isinstance(tensor, tensors.GraphTensor):
+            x = tensors.to_dict(tensor)
+        else:
+            x = tensor
+        if self._update_node_feature:
+            x['node']['feature'] = self._node_dense(tensor.node['feature'])
+        if self._update_edge_feature:
+            x['edge']['feature'] = self._edge_dense(tensor.edge['feature'])
+        tape.watch(x['node']['feature'])
+        outputs = [x['node']['feature']]
+        for layer in self.layers:
+            x = layer(x, training=training)
+            tape.watch(x['node']['feature'])
+            outputs.append(x['node']['feature'])
+
+        tensor = tensor.update(
+            {
+                'node': {
+                    'feature': keras.ops.concatenate(outputs, axis=-1)
                 }
             }
-        ) 
-
+        )
+        return tensor, outputs
+    
     def get_config(self) -> dict:
         config = super().get_config()
-        config.update({
-            'units': self.units,
-            'activation': keras.activations.serialize(self._activation),
-            'field': self.field,
-        })
+        config.update(
+            {
+                'layers': [
+                    keras.layers.serialize(layer) for layer in self.layers
+                ]
+            }
+        )
         return config
-    
 
-@keras.saving.register_keras_serializable(package='molcraft')
-class ContextProjection(Projection):
-    """Context projection layer.
-    """
-    def __init__(self, units: int = None, activation: str = None, **kwargs):
-        kwargs['field'] = 'context'
-        super().__init__(units=units, activation=activation, **kwargs)
-
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class NodeProjection(Projection):
-    """Node projection layer.
-    """
-    def __init__(self, units: int = None, activation: str = None, **kwargs):
-        kwargs['field'] = 'node'
-        super().__init__(units=units, activation=activation, **kwargs)
-
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class EdgeProjection(Projection):
-    """Edge projection layer.
-    """
-    def __init__(self, units: int = None, activation: str = None, **kwargs):
-        kwargs['field'] = 'edge'
-        super().__init__(units=units, activation=activation, **kwargs)
-
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class Reconstruction(GraphLayer):
-
-    def __init__(
-        self, 
-        loss: keras.losses.Loss | str = 'mse',
-        loss_weight: float = 0.5, 
-        **kwargs
-    ):
-        super().__init__(**kwargs)
-        self._loss_fn = keras.losses.get(loss)
-        self._loss_weight = loss_weight
-    
-    def build(self, spec: tensors.GraphTensor.Spec) -> None:
-         has_target_node_feature = 'target_feature' in spec.node
-         if not has_target_node_feature:
-             raise ValueError(
-                'Could not find `target_feature` in `spec.node`. '
-                'Add a `target_feature` via `NodeEmbedding` by setting '
-                '`allow_reconstruction` to `True`.'
-            )
-         output_dim = spec.node['target_feature'].shape[-1]
-         self._dense = self.get_dense(output_dim)
-
-    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        target_node_feature = tensor.node['target_feature']
-        transformed_node_feature = tensor.node['feature']
-
-        reconstructed_node_feature = self._dense(
-            transformed_node_feature
-        )
-
-        loss = self._loss_fn(
-            target_node_feature, reconstructed_node_feature
-        ) 
-        self.add_loss(keras.ops.sum(loss) * self._loss_weight)
-        return tensor.update({'node': {'feature': transformed_node_feature}})
-    
-    def get_config(self):
-        config = super().get_config()
-        config['loss'] = keras.losses.serialize(self._loss_fn)
-        config['loss_weight'] = self._loss_weight 
-        return config
-    
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class GaussianDistance(GraphLayer):
-
-    def __init__(self, kernels: int, **kwargs):
-        super().__init__(**kwargs)
-        self.kernels = kernels 
-
-    def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        self._loc = self.add_weight(
-            shape=[self.kernels],
-            initializer='zeros',
-            dtype='float32',
-            trainable=True
-        ) 
-        self._scale = self.add_weight(
-            shape=[self.kernels],
-            initializer='ones',
-            dtype='float32',
-            trainable=True
-        )
-
-    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        euclidean_distance = ops.euclidean_distance(
-            tensor.gather('coordinate', 'target'),
-            tensor.gather('coordinate', 'source'),
-            axis=-1
-        )
-        return ops.gaussian(
-            euclidean_distance, self._loc, self._scale
-        )
-
-    def get_config(self) -> dict:
-        config = super().get_config()
-        config.update({
-            'kernels': self.kernels,
-        })
-        return config
+    @classmethod
+    def from_config(cls, config: dict) -> 'GraphNetwork':
+        config['layers'] = [
+            keras.layers.deserialize(layer) for layer in config['layers']
+        ]
+        return super().from_config(config)
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -1814,7 +1647,7 @@ class GaussianParams(keras.layers.Dense):
         config['units'] = None
         config['activation'] = keras.activations.serialize(self.loc_activation)
         return config
-
+    
 
 def Input(spec: tensors.GraphTensor.Spec) -> dict:
     """Used to specify inputs to model.
@@ -1868,13 +1701,6 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
                 )
     return inputs
 
-
-def warn(message: str) -> None:
-    warnings.warn(
-        message=message,
-        category=UserWarning,
-        stacklevel=1
-    )
 
 def _serialize_spec(spec: tensors.GraphTensor.Spec) -> dict:
     serialized_spec = {}
