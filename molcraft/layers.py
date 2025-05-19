@@ -455,8 +455,9 @@ class GraphConv(GraphLayer):
             )
         if self.has_node_coordinate:
             euclidean_distance = ops.euclidean_distance(
-                tensor.gather('coordinate', 'source'),
                 tensor.gather('coordinate', 'target'),
+                tensor.gather('coordinate', 'source'),
+                axis=-1
             )
             message = keras.ops.concatenate(
                 [
@@ -479,12 +480,16 @@ class GraphConv(GraphLayer):
             tensor:
                 A `GraphTensor` instance containing a message.
         """
+        previous = tensor.node['feature']
         aggregate = tensor.aggregate('message', mode='mean')
+        aggregate = keras.ops.concatenate([aggregate, previous], axis=-1)
         return tensor.update(
             {
                 'node': {
                     'aggregate': aggregate, 
-                    'message': None
+                },
+                'edge': {
+                    'message': None,
                 }
             }
         )
@@ -500,8 +505,6 @@ class GraphConv(GraphLayer):
                 (updated node features).
         """
         aggregate = tensor.node['aggregate']
-        previous = tensor.node['feature']
-        aggregate = keras.ops.concatenate([aggregate, previous], axis=-1)
         node_feature = self._update_intermediate_dense(aggregate)
         node_feature = self._update_intermediate_activation(node_feature)
         node_feature = self._update_final_dense(node_feature)
@@ -800,7 +803,34 @@ class MPConv(GraphConv):
 
     """Message passing neural network layer.
 
-    Supports 3D molecular graphs.
+    Also supports 3D molecular graphs.
+
+    >>> graph = molcraft.tensors.GraphTensor(
+    ...     context={
+    ...         'size': [2]
+    ...     },
+    ...     node={
+    ...         'feature': [[1.], [2.]]
+    ...     },
+    ...     edge={
+    ...         'source': [0, 1],
+    ...         'target': [1, 0],
+    ...     }
+    ... )
+    >>> conv = molcraft.layers.MPConv(units=4)
+    >>> conv(graph)
+        GraphTensor(
+            context={
+                'size': <tf.Tensor: shape=[1], dtype=int32>
+            },
+            node={
+                'feature': <tf.Tensor: shape=[2, 4], dtype=float32>
+            },
+            edge={
+                'source': <tf.Tensor: shape=[2], dtype=int32>,
+                'target': <tf.Tensor: shape=[2], dtype=int32>
+            }
+        )
     """
 
     def __init__(
@@ -833,6 +863,27 @@ class MPConv(GraphConv):
             )
             self._previous_node_dense = self.get_dense(self.units)
 
+    def aggregate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        """Aggregates messages.
+
+        This method may be overridden by subclass.
+
+        Arguments:
+            tensor:
+                A `GraphTensor` instance containing a message.
+        """
+        aggregate = tensor.aggregate('message', mode='mean')
+        return tensor.update(
+            {
+                'node': {
+                    'aggregate': aggregate, 
+                },
+                'edge': {
+                    'message': None,
+                }
+            }
+        )
+    
     def update(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         previous = tensor.node['feature']
         aggregate = tensor.node['aggregate']
@@ -861,7 +912,7 @@ class GTConv(GraphConv):
 
     """Graph transformer layer.
 
-    Supports 3D molecular graphs.
+    Also supports 3D molecular graphs.
 
     >>> graph = molcraft.tensors.GraphTensor(
     ...     context={
@@ -886,10 +937,9 @@ class GTConv(GraphConv):
             },
             edge={
                 'source': <tf.Tensor: shape=[2], dtype=int32>,
-                'target': <tf.Tensor: shape=[2], dtype=int32>
+                'target': <tf.Tensor: shape=[2], dtype=int32>,
             }
         )
-
     """
 
     def __init__(
@@ -939,30 +989,24 @@ class GTConv(GraphConv):
         )
         self._output_dense = self.get_dense(self.units)
         self._softmax_dropout = keras.layers.Dropout(self._attention_dropout) 
-        self._add_bias = not 'bias' in spec.edge
-        if self._add_bias:
-            self._edge_bias = EdgeBias(biases=self.heads)
-            if self.has_node_coordinate:
-                node_feature_dim = spec.node['feature'].shape[-1]
-                kernels = self.units
-                self._gaussian_basis = GaussianDistance(kernels)
-                self._centrality_dense = self.get_dense(units=node_feature_dim)
-                self._gaussian_edge_bias = self.get_dense(self.heads) 
+
+        if self.has_edge_feature:
+            self._attention_bias_dense_1 = self.get_einsum_dense('ij,jkh->ikh', (1, self.heads))
+
+        if self.has_node_coordinate:
+            node_feature_dim = spec.node['feature'].shape[-1]
+            self._gaussian_basis = GaussianDistance(kernels=self.units)
+            self._centrality_dense = self.get_dense(units=node_feature_dim)
+            self._attention_bias_dense_2 = self.get_einsum_dense('ij,jkh->ikh', (1, self.heads))
 
     def message(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         node_feature = tensor.node['feature']
 
-        if self._add_bias:
-            edge_bias = self._edge_bias(tensor)
-            if self.has_node_coordinate:
-                gaussian = self._gaussian_basis(tensor)
-                centrality = keras.ops.segment_sum(
-                    gaussian, tensor.edge['target'], tensor.num_nodes
-                )
-                node_feature += self._centrality_dense(centrality)
-                edge_bias += self._gaussian_edge_bias(gaussian)
-            tensor = tensor.update({'edge': {'bias': edge_bias}})
-            
+        if self.has_node_coordinate:
+            gaussian = self._gaussian_basis(tensor)
+            centrality = keras.ops.segment_sum(gaussian, tensor.edge['target'], tensor.num_nodes)
+            node_feature += self._centrality_dense(centrality)
+
         query = self._query_dense(node_feature)
         key = self._key_dense(node_feature)
         value = self._value_dense(node_feature)
@@ -974,7 +1018,12 @@ class GTConv(GraphConv):
         attention_score = keras.ops.sum(query * key, axis=1, keepdims=True)
         attention_score /= keras.ops.sqrt(float(self.head_units))
             
-        attention_score += keras.ops.expand_dims(tensor.edge['bias'], axis=1)
+        if self.has_edge_feature:
+            attention_score += self._attention_bias_dense_1(tensor.edge['feature'])
+
+        if self.has_node_coordinate:
+            attention_score += self._attention_bias_dense_2(gaussian)
+
         attention = ops.edge_softmax(attention_score, tensor.edge['target'])
         attention = self._softmax_dropout(attention)
 
@@ -1033,7 +1082,36 @@ class EGConv(GraphConv):
 
     """Equivariant graph neural network layer 3D.
 
-    Supports 3D molecular graphs.
+    Only supports 3D molecular graphs.
+
+    >>> graph = molcraft.tensors.GraphTensor(
+    ...     context={
+    ...         'size': [2]
+    ...     },
+    ...     node={
+    ...         'feature': [[1.], [2.]],
+    ...         'coordinate': [[0.1, -0.1, 0.5], [1.2, -0.5, 2.1]],
+    ...     },
+    ...     edge={
+    ...         'source': [0, 1],
+    ...         'target': [1, 0],
+    ...     }
+    ... )
+    >>> conv = molcraft.layers.EGConv(units=4)
+    >>> conv(graph)
+        GraphTensor(
+            context={
+                'size': <tf.Tensor: shape=[1], dtype=int32>
+            },
+            node={
+                'feature': <tf.Tensor: shape=[2, 4], dtype=float32>,
+                'coordinate': <tf.Tensor: shape=[2, 3], dtype=float32>
+            },
+            edge={
+                'source': <tf.Tensor: shape=[2], dtype=int32>,
+                'target': <tf.Tensor: shape=[2], dtype=int32>
+            }
+        )
     """
 
     def __init__(
@@ -1650,40 +1728,6 @@ class Reconstruction(GraphLayer):
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class EdgeBias(GraphLayer):
-
-    def __init__(self, biases: int, **kwargs):
-        super().__init__(**kwargs)
-        self.biases = biases
-
-    def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        self._has_edge_length = 'length' in spec.edge
-        self._has_edge_feature = 'feature' in spec.edge
-        if self._has_edge_feature:
-            self._edge_feature_dense = self.get_dense(self.biases)
-        if self._has_edge_length:
-            self._edge_length_dense = self.get_dense(
-                self.biases, kernel_initializer='zeros'
-            )
-
-    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        bias = keras.ops.zeros(
-            shape=(tensor.num_edges, self.biases), 
-            dtype=tensor.node['feature'].dtype
-        )
-        if self._has_edge_feature:
-            bias += self._edge_feature_dense(tensor.edge['feature'])
-        if self._has_edge_length:
-            bias += self._edge_length_dense(tensor.edge['length'])
-        return bias
-
-    def get_config(self) -> dict:
-        config = super().get_config()
-        config.update({'biases': self.biases})
-        return config
-    
-
-@keras.saving.register_keras_serializable(package='molcraft')
 class GaussianDistance(GraphLayer):
 
     def __init__(self, kernels: int, **kwargs):
@@ -1706,8 +1750,8 @@ class GaussianDistance(GraphLayer):
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         euclidean_distance = ops.euclidean_distance(
-            tensor.gather('coordinate', 'source'),
             tensor.gather('coordinate', 'target'),
+            tensor.gather('coordinate', 'source'),
             axis=-1
         )
         return ops.gaussian(
