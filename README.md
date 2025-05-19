@@ -34,7 +34,7 @@ featurizer = featurizers.MolGraphFeaturizer(
         features.IsRotatable(),
     ],
     super_atom=True,
-    self_loops=False,
+    self_loops=True,
 )
 
 graph = featurizer([('N[C@@H](C)C(=O)O', 2.0), ('N[C@@H](CS)C(=O)O', 1.0)])
