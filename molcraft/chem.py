@@ -102,18 +102,20 @@ class Mol(Chem.Mol):
 
     def get_conformer(self, index: int = 0) -> 'Conformer':
         if self.num_conformers == 0:
-            warn(
+            warnings.warn(
                 'Molecule has no conformer. To embed conformer(s), invoke the `embed` method, '
-                'and optionally followed by `minimize()` to perform force field minimization.'
+                'and optionally followed by `minimize()` to perform force field minimization.',
+                stacklevel=2
             )
             return None
         return Conformer.cast(self.GetConformer(index))
     
     def get_conformers(self) -> list['Conformer']:
         if self.num_conformers == 0:
-            warn(
+            warnings.warn(
                 'Molecule has no conformers. To embed conformers, invoke the `embed` method, '
-                'and optionally followed by `minimize()` to perform force field minimization.'
+                'and optionally followed by `minimize()` to perform force field minimization.',
+                stacklevel=2
             )
             return []
         return [Conformer.cast(x) for x in self.GetConformers()]
@@ -425,9 +427,10 @@ def embed_conformers(
         mol, numConfs=num_conformers, params=embedding_method
     )
     if not len(success):
-        warn(
+        warnings.warn(
             f'Could not embed conformer(s) for {mol.canonical_smiles!r} using the '
-            'speified method. Giving it another try with more permissive methods.'
+            'speified method. Giving it another try with more permissive methods.',
+            stacklevel=2
         )
         max_attempts = (20 * mol.num_atoms) # increasing it from 10xN to 20xN
         for fallback_method in [method, 'ETDG', 'KDG']:
@@ -483,9 +486,10 @@ def optimize_conformers(
                 ignore_interfragment_interactions=ignore_interfragment_interactions,
             )
     except RuntimeError as e:
-        warn(
+        warnings.warn(
             f'{method} force field minimization raised {e}. '
-            '\nProceeding without force field minimization.'
+            '\nProceeding without force field minimization.',
+            stacklevel=2
         )
     return mol
 
@@ -496,9 +500,10 @@ def prune_conformers(
     energy_force_field: str = 'UFF',
 ):
     if mol.num_conformers == 0:
-        warn(
+        warnings.warn(
             'Molecule has no conformers. To embed conformers, invoke the `embed` method, '
-            'and optionally followed by `minimize()` to perform force field minimization.'
+            'and optionally followed by `minimize()` to perform force field minimization.',
+            stacklevel=2
         )
         return mol
     
@@ -674,9 +679,3 @@ def _atom_pair_fingerprint(
     fp_param = {'fpSize': size}
     return _get_fingerprint(mol, 'atom_pair', binary, dtype, **fp_param)
 
-def warn(message: str) -> None:
-    warnings.warn(
-        message=message,
-        category=UserWarning,
-        stacklevel=1,
-    )

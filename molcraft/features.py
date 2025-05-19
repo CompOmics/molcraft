@@ -110,9 +110,10 @@ class Feature(abc.ABC):
                 'type `float`, `int`, `bool` or `None`.'
             )
         if not math.isfinite(value):
-            warn(
+            warnings.warn(
                 f'Found value of {self.name} to be non-finite. '
-                f'Value received: {value}. Converting it to a value of 0.'
+                f'Value received: {value}. Converting it to a value of 0.',
+                stacklevel=2
             )
             value = 0.0
         return np.asarray([value], dtype=self.dtype)
@@ -380,10 +381,3 @@ default_vocabulary = {
     ],
 }
 
-
-def warn(message: str) -> None:
-    warnings.warn(
-        message=message,
-        category=UserWarning,
-        stacklevel=1
-    )

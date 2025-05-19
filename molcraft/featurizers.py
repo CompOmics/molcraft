@@ -213,9 +213,10 @@ class MolGraphFeaturizer(Featurizer):
         mol = chem.Mol.from_encoding(x, explicit_hs=self.include_hs)
 
         if mol is None:
-            warn(
+            warnings.warn(
                 f'Could not obtain `chem.Mol` from {x}. '
-                'Returning `None` (proceeding without it).'
+                'Returning `None` (proceeding without it).',
+                stacklevel=2
             )
             return None
         
@@ -245,10 +246,11 @@ class MolGraphFeaturizer(Featurizer):
 
         if molecule_feature is not None:
             if 'feature' in context:
-                warn(
+                warnings.warn(
                     'Found both inputted and computed context feature. '
                     'Overwriting inputted context feature with computed '
-                    'context feature (based on `molecule_features`).'
+                    'context feature (based on `molecule_features`).',
+                    stacklevel=2
                 )
             context['feature'] = molecule_feature
 
@@ -529,9 +531,10 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         mol = chem.Mol.from_encoding(x, explicit_hs=explicit_hs)
         
         if mol is None:
-            warn(
+            warnings.warn(
                 f'Could not obtain `chem.Mol` from {x}. '
-                'Proceeding without it.'
+                'Proceeding without it.',
+                stacklevel=2
             )
             return None
 
@@ -571,10 +574,11 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
 
         if molecule_feature is not None:
             if 'feature' in context:
-                warn(
+                warnings.warn(
                     'Found both inputted and computed context feature. '
                     'Overwriting inputted context feature with computed '
-                    'context feature (based on `molecule_features`).'
+                    'context feature (based on `molecule_features`).',
+                    stacklevel=2
                 )
             context['feature'] = molecule_feature
             
@@ -739,13 +743,6 @@ def _add_super_edges(
 
     return edge
 
-    
-def warn(message: str) -> None:
-    warnings.warn(
-        message=message,
-        category=UserWarning,
-        stacklevel=1
-    )
 
 MolFeaturizer = MolGraphFeaturizer
 MolFeaturizer3D = MolGraphFeaturizer3D
