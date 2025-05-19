@@ -36,7 +36,7 @@ Part 3: Complete modeling pipeline
             features.IsRotatable(),
         ],
         super_atom=True,
-        self_loops=False,
+        self_loops=True,
     )
 
     records.write(train_data, featurizer, path + 'records/train/', overwrite=False)
