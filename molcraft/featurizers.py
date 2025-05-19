@@ -180,6 +180,12 @@ class MolGraphFeaturizer(Featurizer):
                 bond_features = [
                     features.BondType(vocab)
                 ]
+                if not default_bond_features and self.radius > 1:
+                    warnings.warn(
+                        'Replacing user-specified bond features with default bond features, '
+                        'as `radius`>1. When `radius`>1, only bond types are considered.',
+                        stacklevel=2
+                    )
         default_molecule_features = (
             molecule_features == 'auto' or molecule_features == 'default'
         )
