@@ -284,9 +284,6 @@ class MolGraphFeaturizer(Featurizer):
             edge['target'] = np.asarray(
                 [path[-1] for path in paths], dtype=self.index_dtype
             )
-            edge['length'] = np.asarray(
-                [len(path) - 1 for path in paths], dtype=self.index_dtype
-            )
             if bond_feature is not None:
                 zero_bond_feature = np.array(
                     [[1., 0., 0., 0., 0.]], dtype=bond_feature.dtype
@@ -297,7 +294,6 @@ class MolGraphFeaturizer(Featurizer):
                 edge['feature'] = self._expand_bond_features(
                     mol, paths, bond_feature,
                 )
-            edge['length'] = np.eye(self.radius + 1, dtype=self.feature_dtype)[edge['length']]
 
         if self.super_atom:
             node, edge = self._add_super_atom(node, edge)
@@ -740,13 +736,6 @@ def _add_super_edges(
             edge['self_loop'], [(0, num_nodes * num_super_nodes * 2)],
             constant_values=False,
         )
-    if 'length' in edge:
-        edge['length'] = np.pad(edge['length'], [(0, 0), (1, 0)])
-        zero_array = np.zeros([num_nodes * num_super_nodes * 2], dtype='int32')
-        edge_length_dim = edge['length'].shape[1]
-        virtual_edge_length = np.eye(edge_length_dim)[zero_array]
-        edge['length'] = np.concatenate([edge['length'], virtual_edge_length])
-        edge['length'] = edge['length'].astype(feature_dtype)
 
     return edge
 
