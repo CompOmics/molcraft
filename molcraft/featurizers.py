@@ -280,8 +280,6 @@ class MolGraphFeaturizer(Featurizer):
                             mol.get_bond_between_atoms(atom_i, atom_j).index
                         )
                 edge['feature'] = bond_feature[bond_indices]
-                if self.self_loops:
-                    edge['self_loop'] = (edge['source'] == edge['target'])
         else:
             paths = chem.get_shortest_paths(
                 mol, radius=self.radius, self_loops=self.self_loops
@@ -376,7 +374,7 @@ class MolGraphFeaturizer(Featurizer):
         num_nodes = node['feature'].shape[0]
         node = _add_super_nodes(node, num_super_nodes)
         edge = _add_super_edges(
-            edge, num_nodes, num_super_nodes, self.feature_dtype, self.index_dtype
+            edge, num_nodes, num_super_nodes, self.feature_dtype, self.index_dtype, self.self_loops
         )
         return node, edge
 
@@ -708,11 +706,15 @@ def _add_super_edges(
     num_super_nodes: int,
     feature_dtype: str,
     index_dtype: str,
+    self_loops: bool,
 ) -> dict[str, np.ndarray]:
     edge = copy.deepcopy(edge)
-    super_node_indices = (
-        np.repeat(np.arange(num_super_nodes), [num_nodes]) + num_nodes
-    )
+
+    super_node_indices = np.arange(num_super_nodes) + num_nodes
+    if self_loops:
+        edge['source'] = np.concatenate([edge['source'], super_node_indices])
+        edge['target'] = np.concatenate([edge['target'], super_node_indices])
+    super_node_indices = np.repeat(super_node_indices, [num_nodes])
     node_indices = (
         np.tile(np.arange(num_nodes), [num_super_nodes])
     )
@@ -727,6 +729,8 @@ def _add_super_edges(
     if 'feature' in edge:
         num_edges = int(edge['feature'].shape[0])
         num_super_edges = int(num_super_nodes * num_nodes * 2)
+        if self_loops:
+            num_super_edges += num_super_nodes
         edge['super'] = np.asarray(
             ([False] * num_edges + [True] * num_super_edges),
             dtype=bool
@@ -739,12 +743,6 @@ def _add_super_edges(
                     dtype=edge['feature'].dtype
                 )
             ]
-        )
-
-    if 'self_loop' in edge:
-        edge['self_loop'] = np.pad(
-            edge['self_loop'], [(0, num_nodes * num_super_nodes * 2)],
-            constant_values=False,
         )
 
     return edge
