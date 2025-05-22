@@ -105,7 +105,11 @@ def segment_mean(
             lambda: 0
         )
     if backend.backend() == 'tensorflow':
-        return tf.math.unsorted_segment_mean(
+        segment_mean_fn = (
+            tf.math.unsorted_segment_mean if not sorted else
+            tf.math.segment_mean
+        )
+        return segment_mean_fn(
             data=data,
             segment_ids=segment_ids,
             num_segments=num_segments

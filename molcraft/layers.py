@@ -350,7 +350,7 @@ class GraphConv(GraphLayer):
         )
         if self._project_residual:
             warnings.warn(
-                '`skip_connect` is set to `True`, but found incompatible dim ' 
+                '`skip_connect` is set to `True`, but found incompatible dim '
                 'between input (node feature dim) and output (`self.units`). '
                 'Automatically applying a projection layer to residual to '
                 'match input and output. ',
@@ -369,7 +369,7 @@ class GraphConv(GraphLayer):
             self._message_intermediate_activation = self.activation
             self._message_final_dense = self.get_dense(self.units)
 
-        has_overridden_aggregate = self.__class__.message != GraphConv.aggregate 
+        has_overridden_aggregate = self.__class__.message != GraphConv.aggregate
         if not has_overridden_aggregate:
             pass
 
@@ -401,13 +401,15 @@ class GraphConv(GraphLayer):
                 residual = self._residual_dense(residual)
 
         message = self.message(tensor)
-        if not isinstance(message, tensors.GraphTensor):
+        add_message = not isinstance(message, tensors.GraphTensor)
+        if add_message:
             message = tensor.update({'edge': {'message': message}})
         elif not 'message' in message.edge:
             raise ValueError('Could not find `message` in `edge` output.')
-            
+        
         aggregate = self.aggregate(message)
-        if not isinstance(aggregate, tensors.GraphTensor):
+        add_aggregate = not isinstance(aggregate, tensors.GraphTensor)
+        if add_aggregate:
             aggregate = tensor.update({'node': {'aggregate': aggregate}})
         elif not 'aggregate' in aggregate.node:
             raise ValueError('Could not find `aggregate` in `node` output.')
@@ -421,6 +423,16 @@ class GraphConv(GraphLayer):
         if update.node['feature'].shape[-1] != self.units:
             raise ValueError('Updated node `feature` is not equal to `self.units`.')
 
+        if add_message and add_aggregate:
+            update = update.update({'node': {'aggregate': None}, 'edge': {'message': None}})
+        elif add_message:
+            update = update.update({'edge': {'message': None}})
+        elif add_aggregate:
+            update = update.update({'node': {'aggregate': None}})
+
+        if not self._skip_connect and not self._normalize:
+            return update
+        
         feature = update.node['feature']
 
         if self._skip_connect:
