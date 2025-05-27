@@ -51,16 +51,21 @@ def write(
         if num_files is None:
             num_files = min(len(inputs), max(1, math.ceil(len(inputs) / 1_000)))
             
-        chunk_size = math.ceil(len(inputs) / num_files)
-        num_files = math.ceil(len(inputs) / chunk_size)
+        num_examples = len(inputs)
+        chunk_sizes = [0] * num_files
+        for i in range(num_examples):
+            chunk_sizes[i % num_files] += 1
+        
+        input_chunks = []
+        current_index = 0
+        for size in chunk_sizes:
+            input_chunks.append(inputs[current_index: current_index + size])
+            current_index += size 
+        
+        assert current_index == num_examples
         
         paths = [
             os.path.join(path, f'tfrecord-{i:04d}.tfrecord')
-            for i in range(num_files)
-        ]
-        
-        input_chunks = [
-            inputs[i * chunk_size: (i + 1) * chunk_size]
             for i in range(num_files)
         ]
         
