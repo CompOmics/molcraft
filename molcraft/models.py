@@ -415,6 +415,10 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     def predict_step(self, tensor: tensors.GraphTensor) -> np.ndarray:
         return self(tensor, training=False)
 
+    def compute_loss(self, x, y, y_pred, sample_weight=None):
+        y, y_pred, sample_weight = _maybe_reshape(y, y_pred, sample_weight)
+        return super().compute_loss(x, y, y_pred, sample_weight)
+        
     def compute_metrics(self, x, y, y_pred, sample_weight=None) -> dict[str, float]:
         loss = self.compute_loss(x, y, y_pred, sample_weight)
         metric_results = {}
@@ -423,7 +427,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
                 metric.update_state(loss)
                 metric_results[metric.name] = metric.result()
             else:
-                metric.update_state(y, y_pred)
+                metric.update_state(y, y_pred, sample_weight=sample_weight)
                 metric_results.update(metric.result())
         return metric_results
     
@@ -593,3 +597,14 @@ def _make_dataset(x: tensors.GraphTensor, batch_size: int):
         .batch(batch_size)
         .prefetch(-1)
     )
+
+def _maybe_reshape(y, y_pred, sample_weight):
+    if (
+        sample_weight is not None and 
+        len(keras.ops.shape(sample_weight)) == 2 and 
+        sample_weight.shape == y_pred.shape
+    ):
+        y = keras.ops.reshape(y, [-1])
+        y_pred = keras.ops.reshape(y_pred, [-1])
+        sample_weight = keras.ops.reshape(sample_weight, [-1])
+    return y, y_pred, sample_weight
