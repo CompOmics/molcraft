@@ -38,7 +38,7 @@ gpu = ["tensorflow[and-cuda]>=2.16"]
 version = { attr = "molcraft.__version__" }
 
 [project.urls]
-Homepage = "https://github.com/akensert/molcraft"
+Homepage = "https://github.com/compomics/molcraft"
 
 [tool.setuptools.packages.find]
 include = ["molcraft*"]
