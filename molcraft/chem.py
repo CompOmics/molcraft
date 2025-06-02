@@ -426,10 +426,12 @@ def embed_conformers(
     success = rdDistGeom.EmbedMultipleConfs(
         mol, numConfs=num_conformers, params=embedding_method
     )
-    if not len(success):
+    num_successes = len(success)
+    if num_successes < num_conformers:
         warnings.warn(
-            f'Could not embed conformer(s) for {mol.canonical_smiles!r} using the '
-            'speified method. Giving it another try with more permissive methods.',
+            f'Could only embed {num_successes} out of {num_conformers} conformer(s) '
+            f'for {mol.canonical_smiles!r} using {method}. Embedding the remaining '
+            f'{num_conformers - num_successes} conformer(s) using different embedding methods.',
             stacklevel=2
         )
         max_attempts = (20 * mol.num_atoms) # increasing it from 10xN to 20xN
@@ -437,14 +439,16 @@ def embed_conformers(
             fallback_embedding_method = available_embedding_methods[fallback_method]
             fallback_embedding_method.useRandomCoords = True
             fallback_embedding_method.maxAttempts = max_attempts
+            fallback_embedding_method.clearConfs = False
             success = rdDistGeom.EmbedMultipleConfs(
-                mol, numConfs=num_conformers, params=fallback_embedding_method
+                mol, numConfs=(num_conformers - num_successes), params=fallback_embedding_method
             )
-            if len(success):
+            num_successes += len(success)
+            if num_successes == num_conformers:
                 break
         else:
             raise RuntimeError(
-                f'Could not embed conformer(s) for {mol.canonical_smiles!r}. '
+                f'Could not embed {num_conformers} conformer(s) for {mol.canonical_smiles!r}. '
             )
     return mol
 
