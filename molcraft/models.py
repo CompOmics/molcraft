@@ -416,7 +416,6 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         return self(tensor, training=False)
 
     def compute_loss(self, x, y, y_pred, sample_weight=None):
-        y, y_pred, sample_weight = _maybe_reshape(y, y_pred, sample_weight)
         return super().compute_loss(x, y, y_pred, sample_weight)
         
     def compute_metrics(self, x, y, y_pred, sample_weight=None) -> dict[str, float]:
@@ -597,14 +596,3 @@ def _make_dataset(x: tensors.GraphTensor, batch_size: int):
         .batch(batch_size)
         .prefetch(-1)
     )
-
-def _maybe_reshape(y, y_pred, sample_weight):
-    if (
-        sample_weight is not None and 
-        len(keras.ops.shape(sample_weight)) == 2 and 
-        sample_weight.shape == y_pred.shape
-    ):
-        y = keras.ops.reshape(y, [-1])
-        y_pred = keras.ops.reshape(y_pred, [-1])
-        sample_weight = keras.ops.reshape(sample_weight, [-1])
-    return y, y_pred, sample_weight
