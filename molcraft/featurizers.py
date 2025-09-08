@@ -196,7 +196,7 @@ class MolGraphFeaturizer(Featurizer):
                 descriptors.CrippenLogP(),
                 descriptors.CrippenMolarRefractivity(),
                 descriptors.NumHeavyAtoms(),
-                descriptors.NumHeteroAtoms(),
+                descriptors.NumHeteroatoms(),
                 descriptors.NumHydrogenDonors(),
                 descriptors.NumHydrogenAcceptors(),
                 descriptors.NumRotatableBonds(),

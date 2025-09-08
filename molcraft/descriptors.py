@@ -61,7 +61,7 @@ class NumHeavyAtoms(Descriptor):
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class NumHeteroAtoms(Descriptor):
+class NumHeteroatoms(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
         return rdMolDescriptors.CalcNumHeteroatoms(mol) 
     

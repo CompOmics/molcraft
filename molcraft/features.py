@@ -185,13 +185,13 @@ class Degree(Feature):
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class TotalNumHs(Feature):
+class NumHydrogens(Feature):
     def call(self, mol: chem.Mol) -> list[int, float, str]: 
         return [atom.GetTotalNumHs() for atom in mol.atoms]
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class TotalValence(Feature):
+class Valence(Feature):
     def call(self, mol: chem.Mol) -> list[int, float, str]: 
         return [atom.GetTotalValence() for atom in mol.atoms]
     
@@ -218,15 +218,28 @@ class CIPCode(Feature):
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class IsChiralityPossible(Feature):
+class RingSize(Feature):
     def call(self, mol: chem.Mol) -> list[int, float, str]: 
-        return [atom.HasProp("_ChiralityPossible") for atom in mol.atoms]
-
+        def ring_size(atom):
+            if not atom.IsInRing():
+                return -1
+            size = 3
+            while not atom.IsInRingSize(size):
+                size += 1 
+            return size
+        return [ring_size(atom) for atom in mol.atoms]
+    
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class FormalCharge(Feature):
     def call(self, mol: chem.Mol) -> list[int, float, str]: 
         return [atom.GetFormalCharge() for atom in mol.atoms]
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class IsChiralityPossible(Feature):
+    def call(self, mol: chem.Mol) -> list[int, float, str]: 
+        return [atom.HasProp("_ChiralityPossible") for atom in mol.atoms]
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -242,7 +255,7 @@ class IsAromatic(Feature):
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class IsHetero(Feature):
+class IsHeteroatom(Feature):
     def call(self, mol: chem.Mol) -> list[int, float, str]: 
         return chem.hetero_atoms(mol)
 
@@ -257,19 +270,6 @@ class IsHydrogenDonor(Feature):
 class IsHydrogenAcceptor(Feature):
     def call(self, mol: chem.Mol) -> list[int, float, str]: 
         return chem.hydrogen_acceptors(mol)
-
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class RingSize(Feature):
-    def call(self, mol: chem.Mol) -> list[int, float, str]: 
-        def ring_size(atom):
-            if not atom.IsInRing():
-                return -1
-            size = 3
-            while not atom.IsInRingSize(size):
-                size += 1 
-            return size
-        return [ring_size(atom) for atom in mol.atoms]
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
