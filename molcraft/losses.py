@@ -2,7 +2,7 @@ import keras
 import numpy as np
 
 
-@keras.saving.register_keras_serializable(package='molgraph')
+@keras.saving.register_keras_serializable(package='molcraft')
 class GaussianNegativeLogLikelihood(keras.losses.Loss):
 
     def __init__(

@@ -661,7 +661,7 @@ class GIConv(GraphConv):
         return config
 
 
-@keras.saving.register_keras_serializable(package='molgraphx')
+@keras.saving.register_keras_serializable(package='molcraft')
 class GAConv(GraphConv):
 
     """Graph attention network layer.
