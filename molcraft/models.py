@@ -155,7 +155,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     
     def get_config(self):
         config = super().get_config()
-        if hasattr(self, '_model_layers'):
+        if hasattr(self, '_model_layers') and self._model_layers is not None:
             config['model_layers'] = [
                 keras.saving.serialize_keras_object(l) 
                 for l in self._model_layers
