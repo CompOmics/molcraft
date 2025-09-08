@@ -31,7 +31,7 @@ class TestFeaturizer(unittest.TestCase):
         featurizer = featurizers.MolFeaturizer(
             atom_features=[
                 features.AtomType({'C', 'N', 'O', 'H'}),
-                features.TotalNumHs({0, 1, 2, 3, 4})
+                features.NumHydrogens({0, 1, 2, 3, 4})
             ],
             bond_features=[
                 features.BondType({'single', 'double', 'aromatic'}),
@@ -119,7 +119,7 @@ class TestFeaturizer(unittest.TestCase):
         featurizer = featurizers.MolFeaturizer3D(
             atom_features=[
                 features.AtomType({'C', 'N', 'O', 'H'}, encode_oov=True),
-                features.TotalNumHs({0, 1, 2, 3, 4})
+                features.NumHydrogens({0, 1, 2, 3, 4})
             ],
             bond_features=[
                 features.Distance(max_distance=20)
