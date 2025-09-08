@@ -3,15 +3,7 @@
 **Deep Learning on Molecules**: A Minimalistic GNN package for Molecular ML. 
 
 > [!NOTE]  
-> In progress/Unfinished.
-
-## Highlights
-- Compatible with **Keras 3**
-- Customizable and serializable **featurizers**
-- Customizable and serializable **layers** and **models**
-- Customizable **GraphTensor**
-- Fast and efficient featurization of molecular graphs
-- Fast and efficient input pipelines using TF **records**
+> In progress.
 
 ## Examples 
 
@@ -26,7 +18,7 @@ import keras
 featurizer = featurizers.MolGraphFeaturizer(
     atom_features=[
         features.AtomType(),
-        features.TotalNumHs(),
+        features.NumHydrogens(),
         features.Degree(),
     ],
     bond_features=[
