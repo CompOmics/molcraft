@@ -5,6 +5,19 @@
 > [!NOTE]  
 > In progress.
 
+## Installation
+
+For CPU users:
+
+```bash
+pip install --pre molcraft
+```
+
+For GPU users:
+```bash
+pip install --pre molcraft[gpu]
+```
+
 ## Examples 
 
 ```python
