@@ -114,6 +114,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         return typing.cast(GraphModel, super().__new__(cls))
     
     def __init__(self, *args, **kwargs):
+        self._model_layers = kwargs.pop('model_layers', None)
         super().__init__(*args, **kwargs)
         self.jit_compile = False 
 
@@ -135,10 +136,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
                 `molcraft.layers.Input(spec)`.
         """
         if not tensors.is_graph(graph_layers[0]):
-            # TODO: Allow this. E.g.: return cls(layers=graph_layers)
-            raise ValueError(
-                'Graph input not found. Make sure to add `Input`.'
-            )
+            return cls(model_layers=graph_layers)
         inputs: dict = graph_layers.pop(0)
         x = inputs
         for layer in graph_layers:
@@ -148,6 +146,31 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         outputs = x
         return cls(inputs=inputs, outputs=outputs, **kwargs)
     
+    def propagate(self, graph: tensors.GraphTensor) -> tensors.GraphTensor:
+        if self._model_layers is None:
+            return super().propagate(graph)
+        for layer in self._model_layers:
+            graph = layer(graph)
+        return graph
+    
+    def get_config(self):
+        config = super().get_config()
+        if hasattr(self, '_model_layers'):
+            config['model_layers'] = [
+                keras.saving.serialize_keras_object(l) 
+                for l in self._model_layers
+            ]
+        return config 
+    
+    @classmethod
+    def from_config(cls, config: dict):
+        if 'model_layers' in config:
+            config['model_layers'] = [
+                keras.saving.deserialize_keras_object(l) 
+                for l in config['model_layers']
+            ]
+        return super().from_config(config)
+
     def compile(
         self, 
         optimizer: keras.optimizers.Optimizer | str | None = 'rmsprop',
@@ -530,58 +553,6 @@ def saliency(
             }
         }
     ) 
-
-def predict(
-    model: GraphModel,
-    x: tensors.GraphTensor | tf.data.Dataset,
-    repeats: int | None = 16, 
-    batch_size: int = 256,
-    verbose: int = 0,
-    **kwargs,
-) -> tuple[tf.Tensor | np.ndarray, tf.Tensor | np.ndarray]:
-    """Predict with model.
-
-    By default performs monte-carlo predictions. Namely, it performs
-    `repeats` number of predictions for each example with `training = True`,
-    and subsequently computes mean and standard deviations of the predictions.
-
-    Args:
-        x: 
-            A `GraphTensor` instance.
-        repeats:
-            Number of predictions per example.
-        batch_size:
-            Number of samples per batch of computation.
-        kwargs:
-            See `Model.predict` in Keras documentation. 
-            May or may not apply here. 
-    """
-    if not repeats:
-        return model.predict(
-            x, batch_size=batch_size, verbose=verbose, **kwargs
-        )
-    if isinstance(x, tensors.GraphTensor):
-        ds = tf.data.Dataset.from_tensor_slices(x)
-        ds = ds.repeat(repeats)
-        ds = ds.batch(batch_size)
-    elif isinstance(x, tf.data.Dataset):
-        ds = x.repeat(repeats)
-    else:
-        raise ValueError(
-            'Input `x` needs to be a `tensors.GraphTensor` instance '
-            'or a `tf.data.Dataset` instance constructed from `tensors.GraphTensor`.'
-        )
-    ds = ds.prefetch(-1)
-    y_pred = keras.ops.concatenate([
-        model(x, training=True) for x in ds])
-    global_batch_size = len(y_pred) // repeats
-    y_pred = np.reshape(y_pred, (repeats, global_batch_size, -1))
-    y_pred_loc = keras.ops.mean(y_pred, axis=0)
-    y_pred_scale = keras.ops.std(y_pred, axis=0)
-    if tf.executing_eagerly():
-        y_pred_loc = y_pred_loc.numpy()
-        y_pred_scale = y_pred_scale.numpy()
-    return (y_pred_loc, y_pred_scale)
     
 def _functional_init_arguments(args, kwargs):
     return (
