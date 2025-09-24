@@ -556,6 +556,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
 
         molecule_feature = self.molecule_feature(mol)
         molecule_size = self.num_atoms(mol) + int(self.super_atom)
+        molecule_size = molecule_size.astype(self.index_dtype)
 
         if isinstance(context, dict):
             if 'x' in context:
