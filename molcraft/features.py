@@ -276,37 +276,42 @@ class IsHydrogenAcceptor(Feature):
 class IsInRing(Feature):
     def call(self, mol: chem.Mol) -> list[int, float, str]:         
         return [atom.IsInRing() for atom in mol.atoms]
+    
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class PartialCharge(Feature):
+    """Gasteiger partial charge."""
+    def call(self, mol: chem.Mol) -> list[int, float, str]:  
+        return chem.partial_charges(mol)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class CrippenLogPContribution(Feature):
+class TotalPolarSurfaceAreaContribution(Feature):
+    """Total polar surface area (TPSA) contribution."""
+    def call(self, mol: chem.Mol) -> list[int, float, str]:      
+        return chem.total_polar_surface_area_contributions(mol)
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class AccessibleSurfaceAreaContribution(Feature):
+    """Labute accessible surface area (ASA) contribution."""
+    def call(self, mol: chem.Mol) -> list[int, float, str]:  
+        return chem.accessible_surface_area_contributions(mol)
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class LogPContribution(Feature):
+    """Crippen logP contribution."""
     def call(self, mol: chem.Mol) -> list[int, float, str]:      
         return chem.logp_contributions(mol)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class CrippenMolarRefractivityContribution(Feature):
+class MolarRefractivityContribution(Feature):
+    """Crippen molar refractivity contribution."""
     def call(self, mol: chem.Mol) -> list[int, float, str]:      
-        return chem.molar_refractivity_contribution(mol)
-    
+        return chem.molar_refractivity_contributions(mol)
 
-@keras.saving.register_keras_serializable(package='molcraft')
-class TPSAContribution(Feature):
-    def call(self, mol: chem.Mol) -> list[int, float, str]:      
-        return chem.tpsa_contribution(mol)
-    
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class LabuteASAContribution(Feature):
-    def call(self, mol: chem.Mol) -> list[int, float, str]:  
-        return chem.asa_contribution(mol)
-
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class GasteigerCharge(Feature):
-    def call(self, mol: chem.Mol) -> list[int, float, str]:  
-        return chem.gasteiger_charges(mol)
-    
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class BondType(Feature):

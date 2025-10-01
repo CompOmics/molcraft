@@ -37,19 +37,21 @@ class MolWeight(Descriptor):
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class TPSA(Descriptor):
+class TotalPolarSurfaceArea(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
         return rdMolDescriptors.CalcTPSA(mol)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class CrippenLogP(Descriptor):
+class LogP(Descriptor):
+    """Crippen logP."""
     def call(self, mol: chem.Mol) -> np.ndarray:
         return rdMolDescriptors.CalcCrippenDescriptors(mol)[0]
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class CrippenMolarRefractivity(Descriptor):
+class MolarRefractivity(Descriptor):
+    """Crippen molar refractivity."""
     def call(self, mol: chem.Mol) -> np.ndarray:
         return rdMolDescriptors.CalcCrippenDescriptors(mol)[1]
     

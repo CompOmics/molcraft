@@ -331,20 +331,20 @@ def get_shortest_paths(
 def get_periodic_table():
     return Chem.GetPeriodicTable()
 
-def gasteiger_charges(mol: 'Mol') -> list[float]:
+def partial_charges(mol: 'Mol') -> list[float]:
     rdPartialCharges.ComputeGasteigerCharges(mol)
     return [atom.GetDoubleProp("_GasteigerCharge") for atom in mol.atoms]
 
 def logp_contributions(mol: 'Mol') -> list[float]:
     return [i[0] for i in rdMolDescriptors._CalcCrippenContribs(mol)]
 
-def molar_refractivity_contribution(mol: 'Mol') -> list[float]:
+def molar_refractivity_contributions(mol: 'Mol') -> list[float]:
     return [i[1] for i in rdMolDescriptors._CalcCrippenContribs(mol)]
 
-def tpsa_contribution(mol: 'Mol') -> list[float]:
+def total_polar_surface_area_contributions(mol: 'Mol') -> list[float]:
     return list(rdMolDescriptors._CalcTPSAContribs(mol))
 
-def asa_contribution(mol: 'Mol') -> list[float]:
+def accessible_surface_area_contributions(mol: 'Mol') -> list[float]:
     return list(rdMolDescriptors._CalcLabuteASAContribs(mol)[0])
 
 def hydrogen_acceptors(mol: 'Mol') -> list[bool]:
