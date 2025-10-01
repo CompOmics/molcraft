@@ -62,6 +62,22 @@ def scatter_update(
         indices = keras.ops.expand_dims(indices, axis=-1)
     return keras.ops.scatter_update(inputs, indices, updates)
 
+def scatter_add(
+    inputs: tf.Tensor,
+    indices: tf.Tensor,
+    updates: tf.Tensor,
+) -> tf.Tensor:
+    if indices.dtype == tf.bool:
+        indices = keras.ops.stack(keras.ops.where(indices), axis=-1)
+    expected_rank = len(keras.ops.shape(inputs))
+    current_rank = len(keras.ops.shape(indices))
+    for _ in range(expected_rank - current_rank):
+        indices = keras.ops.expand_dims(indices, axis=-1)
+    if backend.backend() == 'tensorflow':
+        return tf.tensor_scatter_nd_add(inputs, indices, updates)
+    updates = scatter_update(keras.ops.zeros_like(inputs), indices, updates)
+    return inputs + updates
+
 def edge_softmax(
     score: tf.Tensor, 
     edge_target: tf.Tensor
