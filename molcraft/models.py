@@ -250,7 +250,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
                 val_size = int(val_split * x.num_subgraphs)
                 x_val = _make_dataset(x[-val_size:], batch_size)
                 x = x[:-val_size]
-            x = _make_dataset(x, batch_size)
+            x = _make_dataset(x, batch_size, shuffle=kwargs.get('shuffle', True))
         return super().fit(x, validation_data=x_val, **kwargs)
     
     def evaluate(self, x: tensors.GraphTensor | tf.data.Dataset, **kwargs):
@@ -561,9 +561,8 @@ def _functional_init_arguments(args, kwargs):
         or ("inputs" in kwargs and "outputs" in kwargs)
     )
 
-def _make_dataset(x: tensors.GraphTensor, batch_size: int):
-    return (
-        tf.data.Dataset.from_tensor_slices(x)
-        .batch(batch_size)
-        .prefetch(-1)
-    )
+def _make_dataset(x: tensors.GraphTensor, batch_size: int, shuffle: bool = False):
+    ds = tf.data.Dataset.from_tensor_slices(x)
+    if shuffle:
+        ds = ds.shuffle(buffer_size=ds.cardinality())
+    return ds.batch(batch_size).prefetch(-1)
