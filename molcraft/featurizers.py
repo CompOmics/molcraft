@@ -169,7 +169,7 @@ class MolGraphFeaturizer(Featurizer):
         if default_atom_features:
             atom_features = [features.AtomType()]
             if not self.include_hs:
-                atom_features.append(features.TotalNumHs())
+                atom_features.append(features.NumHydrogens())
             atom_features.append(features.Degree())
         if not isinstance(self, MolGraphFeaturizer3D):
             default_bond_features = (
