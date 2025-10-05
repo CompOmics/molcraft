@@ -397,7 +397,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
             raise ValueError(
                 'Could not extract output. `Readout` layer not found.'
             )
-        return self.__class__(inputs, outputs, name=f'{self.name}_head')
+        return self.__class__(inputs, outputs, name=f'{self.name}_backbone')
 
     def head(self) -> functional.Functional:
         if not isinstance(self, FunctionalGraphModel):
