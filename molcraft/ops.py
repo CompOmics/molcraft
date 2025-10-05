@@ -4,6 +4,7 @@ import tensorflow as tf
 from keras import backend
 
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def gather(
     node_feature: tf.Tensor, 
     edge: tf.Tensor
@@ -16,6 +17,7 @@ def gather(
         edge = keras.ops.expand_dims(edge, axis=-1)
     return keras.ops.take_along_axis(node_feature, edge, axis=0)
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def aggregate(
     node_feature: tf.Tensor, 
     edge: tf.Tensor, 
@@ -30,6 +32,7 @@ def aggregate(
         node_feature, edge, num_nodes, sorted=False
     )
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def propagate(
     node_feature: tf.Tensor,
     edge_source: tf.Tensor,
@@ -49,6 +52,7 @@ def propagate(
         
     return aggregate(node_feature, edge_target, num_nodes)
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def scatter_update(
     inputs: tf.Tensor,
     indices: tf.Tensor,
@@ -62,6 +66,7 @@ def scatter_update(
         indices = keras.ops.expand_dims(indices, axis=-1)
     return keras.ops.scatter_update(inputs, indices, updates)
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def scatter_add(
     inputs: tf.Tensor,
     indices: tf.Tensor,
@@ -78,6 +83,7 @@ def scatter_add(
     updates = scatter_update(keras.ops.zeros_like(inputs), indices, updates)
     return inputs + updates
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def edge_softmax(
     score: tf.Tensor, 
     edge_target: tf.Tensor
@@ -98,6 +104,7 @@ def edge_softmax(
     denominator = gather(denominator, edge_target)
     return numerator / denominator
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def edge_weight(
     edge: tf.Tensor,
     edge_weight: tf.Tensor,
@@ -108,6 +115,7 @@ def edge_weight(
         edge_weight = keras.ops.expand_dims(edge_weight, axis=-1)
     return edge * edge_weight
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def segment_mean(
     data: tf.Tensor,
     segment_ids: tf.Tensor,
@@ -142,6 +150,7 @@ def segment_mean(
     )
     return x / sizes[:, None]
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def gaussian(
     x: tf.Tensor, 
     mean: tf.Tensor, 
@@ -155,6 +164,7 @@ def gaussian(
     a = (2 * np.pi) ** 0.5
     return keras.ops.exp(-0.5 * (((x - mean) / std) ** 2)) / (a * std)
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def euclidean_distance(
     x1: tf.Tensor, 
     x2: tf.Tensor, 
@@ -169,6 +179,7 @@ def euclidean_distance(
         )
     )
 
+@keras.saving.register_keras_serializable(package='molcraft')
 def displacement(
     x1: tf.Tensor,
     x2: tf.Tensor,
