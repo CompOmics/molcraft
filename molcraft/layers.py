@@ -1441,7 +1441,7 @@ class AddContext(GraphLayer):
     def __init__(
         self, 
         field: str = 'feature',
-        drop: bool = True,
+        drop: bool = False,
         normalize: bool = False,
         **kwargs
     ) -> None:
