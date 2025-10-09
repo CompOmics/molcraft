@@ -1431,6 +1431,56 @@ class EdgeEmbedding(GraphLayer):
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
+class AddContext(GraphLayer):
+
+    """Context adding layer.
+
+    Adds context to super nodes.
+    """
+
+    def __init__(
+        self, 
+        field: str = 'feature',
+        drop: bool = True,
+        normalize: bool = False,
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self.field = field
+        self.drop = drop
+        self._normalize = normalize
+        
+    def build(self, spec: tensors.GraphTensor.Spec) -> None:
+        feature_dim = spec.node['feature'].shape[-1]
+        self._context_dense = self.get_dense(feature_dim)
+        if not self._normalize:
+            self._norm = keras.layers.Identity()
+        elif str(self._normalize).lower().startswith('layer'):
+            self._norm = keras.layers.LayerNormalization()
+        else:
+            self._norm = keras.layers.BatchNormalization()
+
+    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        context = tensor.context[self.field]
+        context = self._context_dense(context)
+        context = self._norm(context)
+        node_feature = ops.scatter_add(
+            tensor.node['feature'], tensor.node['super'], context
+        )
+        data = {'node': {'feature': node_feature}}
+        if self.drop:
+            data['context'] = {self.field: None}
+        return tensor.update(data)
+
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config['field'] = self.field 
+        config['drop'] = self.drop
+        config['normalize'] = self._normalize
+        return config
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
 class GraphNetwork(GraphLayer):
 
     """Graph neural network.
