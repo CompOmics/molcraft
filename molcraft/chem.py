@@ -102,21 +102,13 @@ class Mol(Chem.Mol):
 
     def get_conformer(self, index: int = 0) -> 'Conformer':
         if self.num_conformers == 0:
-            warnings.warn(
-                'Molecule has no conformer. To embed conformer(s), invoke the `embed` method, '
-                'and optionally followed by `minimize()` to perform force field minimization.',
-                stacklevel=2
-            )
+            warnings.warn('Molecule has no conformer.')
             return None
         return Conformer.cast(self.GetConformer(index))
     
     def get_conformers(self) -> list['Conformer']:
         if self.num_conformers == 0:
-            warnings.warn(
-                'Molecule has no conformers. To embed conformers, invoke the `embed` method, '
-                'and optionally followed by `minimize()` to perform force field minimization.',
-                stacklevel=2
-            )
+            warnings.warn('Molecule has no conformer.')
             return []
         return [Conformer.cast(x) for x in self.GetConformers()]
      
@@ -402,8 +394,9 @@ def embed_conformers(
     mol: Mol, 
     num_conformers: int, 
     method: str = 'ETKDGv3',
+    random_seed: int | None = None, 
     **kwargs
-) -> None:
+) -> Mol:
     available_embedding_methods = {
         'ETDG': rdDistGeom.ETDG(),
         'ETKDG': rdDistGeom.ETKDG(),
@@ -423,6 +416,9 @@ def embed_conformers(
     for key, value in kwargs.items():
         setattr(embedding_method, key, value)
 
+    if random_seed is not None:
+        embedding_method.randomSeed = random_seed
+
     success = rdDistGeom.EmbedMultipleConfs(
         mol, numConfs=num_conformers, params=embedding_method
     )
@@ -440,6 +436,8 @@ def embed_conformers(
             fallback_embedding_method.useRandomCoords = True
             fallback_embedding_method.maxAttempts = max_attempts
             fallback_embedding_method.clearConfs = False
+            if random_seed is not None:
+                fallback_embedding_method.randomSeed = random_seed
             success = rdDistGeom.EmbedMultipleConfs(
                 mol, numConfs=(num_conformers - num_successes), params=fallback_embedding_method
             )
@@ -459,7 +457,7 @@ def optimize_conformers(
     num_threads: bool = 1,
     ignore_interfragment_interactions: bool = True,
     vdw_threshold: float = 10.0,
-):
+) -> Mol:
     available_force_field_methods = [
         'MMFF', 'MMFF94', 'MMFF94s', 'UFF'
     ]
@@ -502,7 +500,7 @@ def prune_conformers(
     keep: int = 1,
     threshold: float = 0.0,
     energy_force_field: str = 'UFF',
-):
+) -> Mol:
     if mol.num_conformers == 0:
         warnings.warn(
             'Molecule has no conformers. To embed conformers, invoke the `embed` method, '
@@ -539,7 +537,7 @@ def _uff_optimize_conformers(
     vdw_threshold: float = 10.0,
     ignore_interfragment_interactions: bool = True,
     **kwargs,
-) -> Mol:
+) -> tuple[list[float], list[bool]]:
     """Universal Force Field Minimization.
     """
     results = rdForceFieldHelpers.UFFOptimizeMoleculeConfs(
@@ -560,7 +558,7 @@ def _mmff_optimize_conformers(
     variant: str = 'MMFF94',
     ignore_interfragment_interactions: bool = True,
     **kwargs,
-) -> Mol:
+) -> tuple[list[float], list[bool]]:
     """Merck Molecular Force Field Minimization.
     """
     if not rdForceFieldHelpers.MMFFHasAllMoleculeParams(mol):
