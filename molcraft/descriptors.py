@@ -91,3 +91,17 @@ class NumRings(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
         return rdMolDescriptors.CalcNumRings(mol) 
 
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class AtomCount(Descriptor):
+
+    def __init__(self, atom_type: str, **kwargs):
+        super().__init__(**kwargs)
+        self.atom_type = atom_type
+
+    def call(self, mol: chem.Mol) -> np.ndarray:
+        count = 0
+        for atom in mol.atoms:
+            if atom.GetSymbol() == self.atom_type:
+                count += 1
+        return count
