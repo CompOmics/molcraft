@@ -19,8 +19,6 @@ class Mol(Chem.Mol):
     @classmethod
     def from_encoding(cls, encoding: str, explicit_hs: bool = False, **kwargs) -> 'Mol':
         rdkit_mol = get_mol(encoding, **kwargs)
-        if not rdkit_mol:
-            return None
         if explicit_hs:
             rdkit_mol = Chem.AddHs(rdkit_mol) 
         rdkit_mol.__class__ = cls 
@@ -214,11 +212,10 @@ def get_mol(
     else:
         mol = Chem.MolFromSmiles(encoding, sanitize=False)
     if mol is not None:
-        return sanitize_mol(mol, strict, assign_stereo_chemistry)
-    raise ValueError(
-        f"{encoding} is invalid; "
-        f"make sure {encoding} is a valid SMILES or InChI string."
-    )
+        mol = sanitize_mol(mol, strict, assign_stereo_chemistry)
+    if mol is not None:
+        return mol
+    raise ValueError(f'Could not obtain `chem.Mol` from {encoding}.')
 
 def get_adjacency_matrix(
     mol: Chem.Mol,
