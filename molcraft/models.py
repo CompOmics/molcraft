@@ -154,6 +154,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         return graph
     
     def get_config(self):
+        """Obtain model config."""
         config = super().get_config()
         if hasattr(self, '_model_layers') and self._model_layers is not None:
             config['model_layers'] = [
@@ -164,6 +165,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     
     @classmethod
     def from_config(cls, config: dict):
+        """Obtain model from model config."""
         if 'model_layers' in config:
             config['model_layers'] = [
                 keras.saving.deserialize_keras_object(l) 
