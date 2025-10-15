@@ -11,7 +11,7 @@ def split(
     test_size: float | None = None,
     groups: str | np.ndarray = None,
     shuffle: bool = False, 
-    random_state: int | None = None,
+    random_seed: int | None = None,
 ) -> tuple[np.ndarray | pd.DataFrame, ...]:
     """Splits the dataset into subsets.
 
@@ -28,7 +28,7 @@ def split(
             The groups to perform the splitting on.
         shuffle:
             Whether the dataset should be shuffled prior to splitting.
-        random_state:
+        random_seed:
             The random state/seed. Only applicable if shuffling.
     """
     if not isinstance(data, (pd.DataFrame, np.ndarray)):
@@ -69,7 +69,7 @@ def split(
     train_size += remainder
 
     if shuffle:
-        np.random.seed(random_state)
+        np.random.seed(random_seed)
         np.random.shuffle(indices)
 
     train_mask = np.isin(groups, indices[:train_size])
@@ -84,7 +84,7 @@ def cv_split(
     num_splits: int = 10,
     groups: str | np.ndarray = None,
     shuffle: bool = False, 
-    random_state: int | None = None,
+    random_seed: int | None = None,
 ) -> typing.Iterator[
         tuple[np.ndarray | pd.DataFrame, np.ndarray | pd.DataFrame]
     ]:
@@ -99,7 +99,7 @@ def cv_split(
             The groups to perform the splitting on.
         shuffle:
             Whether the dataset should be shuffled prior to splitting.
-        random_state:
+        random_seed:
             The random state/seed. Only applicable if shuffling.
     """
     if not isinstance(data, (pd.DataFrame, np.ndarray)):
@@ -119,7 +119,7 @@ def cv_split(
             f'the data size or the number of groups ({size}).'
         )
     if shuffle:
-        np.random.seed(random_state)
+        np.random.seed(random_seed)
         np.random.shuffle(indices)
 
     indices_splits = np.array_split(indices, num_splits)
