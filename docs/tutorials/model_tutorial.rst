@@ -21,10 +21,11 @@ Concretely, instead of generating all molecular (sub)graphs at once as follows:
 
 .. code:: python 
 
-    # data = [(SMILES_1, LABEL_1), ..., (SMILES_N, LABEL_N)]
+    # Dummy data
+    data = [("N[C@@H](C)C(=O)O", 1.), ("N[C@@H](CS)C(=O)O", 2.)] 
     graph_tensor = featurizer(data) # May run out of memory if len(data) >> 10000
     dataset = tf.data.Dataset.from_tensor_slices(graph_tensor).batch(32).prefetch(-1)
-    model.fit(dataset)
+    print(dataset)
 
 write molecular (sub)graphs to disk and load it as a `tf.data.TFRecordDataset`:
 
@@ -32,13 +33,13 @@ write molecular (sub)graphs to disk and load it as a `tf.data.TFRecordDataset`:
 
     from molcraft import records 
 
-    records_path = '/path/to/records/' # change this
-
-    # data = [(SMILES_1, LABEL_1), ..., (SMILES_N, LABEL_N)]
-    records.write(data, featurizer, records_path, overwrite=False)
-    dataset = records.read(records_path).batch(32).prefetch(-1)
-    model.fit(dataset)
-
+    # Desired path to TF records
+    path = '/tmp/records/' 
+    # Dummy data
+    data = [("N[C@@H](C)C(=O)O", 1.), ("N[C@@H](CS)C(=O)O", 2.)] 
+    records.write(data, featurizer, path)
+    dataset = records.read(path).batch(32).prefetch(-1)
+    print(dataset)
 
 2.2 - Layers (**layers.py**)
 ---------------------------------
@@ -48,9 +49,9 @@ write molecular (sub)graphs to disk and load it as a `tf.data.TFRecordDataset`:
     from molcraft import layers 
 
     graph_tensor = layers.NodeEmbedding(dim=128)(graph_tensor)
-    graph_tensor = layers.GraphTransformer(units=128)(graph_tensor)
-    graph_tensor = layers.GraphTransformer(units=128)(graph_tensor)
-    tensor = layers.Readout(mode='mean')(graph_tensor)
+    graph_tensor = layers.GTConv(units=128)(graph_tensor)
+    graph_tensor = layers.GTConv(units=128)(graph_tensor)
+    tensor = layers.Readout()(graph_tensor)
 
 
 2.3 - Models (**models.py**)
@@ -62,22 +63,22 @@ write molecular (sub)graphs to disk and load it as a `tf.data.TFRecordDataset`:
 
     model = models.GraphModel.from_layers(
         [
-            layers.Input(train_dataset.element_spec),
+            layers.Input(dataset.element_spec),
             layers.NodeEmbedding(dim=128),
             layers.EdgeEmbedding(dim=128),
-            layers.GraphTransformer(units=128),
-            layers.GraphTransformer(units=128),
-            layers.GraphTransformer(units=128),
-            layers.GraphTransformer(units=128),
-            layers.Readout(mode='mean'),
+            layers.GTConv(units=128),
+            layers.GTConv(units=128),
+            layers.GTConv(units=128),
+            layers.GTConv(units=128),
+            layers.Readout(),
             keras.layers.Dense(units=1024, activation='relu'),
             keras.layers.Dense(units=1024, activation='relu'),
             keras.layers.Dense(1)
         ]
     )
 
-    model.fit(train_dataset, epochs=10)
-    scores = model.evaluate(test_dataset)
-    preds = model.predict(test_dataset)
+    model.fit(dataset, epochs=10)
+    scores = model.evaluate(dataset)
+    preds = model.predict(dataset)
 
 
