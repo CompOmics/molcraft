@@ -1,4 +1,4 @@
-__version__ = '0.1.0a16'
+__version__ = '0.1.0a17'
 
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -6,7 +6,6 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 from molcraft import chem
 from molcraft import features
 from molcraft import descriptors
-from molcraft import conformers 
 from molcraft import featurizers
 from molcraft import layers 
 from molcraft import models 
