@@ -2,7 +2,6 @@ import unittest
 
 from molcraft import features
 from molcraft import featurizers
-from molcraft import conformers
 
 
 class TestFeaturizer(unittest.TestCase):
@@ -28,7 +27,7 @@ class TestFeaturizer(unittest.TestCase):
 
     def test_mol_featurizer(self):
             
-        featurizer = featurizers.MolFeaturizer(
+        featurizer = featurizers.MolGraphFeaturizer(
             atom_features=[
                 features.AtomType({'C', 'N', 'O', 'H'}),
                 features.NumHydrogens({0, 1, 2, 3, 4})
@@ -38,10 +37,9 @@ class TestFeaturizer(unittest.TestCase):
                 features.IsRotatable(),
             ],
             molecule_features='auto',
-            super_atom=True,
-            radius=1, 
+            super_node=True,
             self_loops=False,
-            include_hs=False, 
+            include_hydrogens=False, 
         ) 
 
         node_dim = 9
@@ -112,26 +110,21 @@ class TestFeaturizer(unittest.TestCase):
             self.assertEqual(graph.edge['source'].dtype.name, 'int32')
             self.assertEqual(graph.edge['target'].dtype.name, 'int32')
 
-
     def test_mol_featurizer3d(self):
         
-        num_conformers = 5
-        featurizer = featurizers.MolFeaturizer3D(
+        num_conformers = 1
+        featurizer = featurizers.MolGraphFeaturizer3D(
             atom_features=[
                 features.AtomType({'C', 'N', 'O', 'H'}, encode_oov=True),
                 features.NumHydrogens({0, 1, 2, 3, 4})
             ],
-            bond_features=[
-                features.Distance(max_distance=20)
+            pair_features=[
+                features.PairDistance(max_distance=20)
             ],
-            conformer_generator=conformers.ConformerEmbedder(
-                method='ETKDGv3',
-                num_conformers=num_conformers,
-            ),
-            super_atom=True,
-            radius=5.0, 
+            super_node=True,
             self_loops=False,
-            include_hs=False, 
+            include_hydrogens=False, 
+            radius=5.0, 
         ) 
 
         node_dim = 10

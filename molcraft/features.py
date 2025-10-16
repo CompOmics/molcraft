@@ -41,11 +41,7 @@ class Feature(abc.ABC):
     
     def __call__(self, mol: chem.Mol) -> np.ndarray:
         if not isinstance(mol, chem.Mol):
-            raise ValueError(
-                f'Input to {self.name} needs to be a `chem.Mol`, which '
-                'implements two properties that should be iterated over '
-                'to compute features: `atoms` and `bonds`.'
-            )
+            raise TypeError(f'Input to {self.name} must be a `chem.Mol` instance.')
         features = self.call(mol)
         if len(features) != mol.num_atoms and len(features) != mol.num_bonds:
             raise ValueError(
@@ -117,59 +113,6 @@ class Feature(abc.ABC):
             )
             value = 0.0
         return np.asarray([value], dtype=self.dtype)
-    
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class EdgeFeature(Feature):
-
-    def __call__(self, mol: chem.Mol) -> np.ndarray:
-        if not isinstance(mol, chem.Mol):
-            raise ValueError(
-                f'Input to {self.name} needs to be a `chem.Mol`, which '
-                'implements two properties that should be iterated over '
-                'to compute features: `atoms` and `bonds`.'
-            )
-        features = self.call(mol)
-        if len(features) != int(mol.num_atoms**2):
-            raise ValueError(
-                f'The number of features computed by {self.name} does not '
-                'match the number of node pairs in the `chem.Mol` object. '
-                f'Make sure the list of items returned by {self.name}(input) '
-                'correspond to node/atom pairs: '
-                '[(0, 0), (0, 1), ..., (0, N), (1, 0), ... (N, N)], '
-                'where N denotes the number of nodes/atoms.'
-            )
-        func = (
-            self._featurize_categorical if self.vocab else 
-            self._featurize_floating
-        )
-        return np.asarray([func(x) for x in features], dtype=self.dtype)
-        
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class Distance(EdgeFeature):
-    
-    def __init__(
-        self, 
-        max_distance: int = None, 
-        allow_oov: int = True,
-        encode_oov: bool = True, 
-        **kwargs,
-    ) -> None:
-        vocab = kwargs.pop('vocab', None)
-        if not vocab:
-            if max_distance is None:
-                max_distance = 20
-            vocab = list(range(max_distance + 1))
-        super().__init__(
-            vocab=vocab, 
-            allow_oov=allow_oov, 
-            encode_oov=encode_oov, 
-            **kwargs
-        )
-
-    def call(self, mol: chem.Mol) -> list[int]:
-        return [int(x) for x in chem.get_distances(mol).reshape(-1)]
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -340,6 +283,55 @@ class IsRotatable(Feature):
         return chem.rotatable_bonds(mol)
 
 
+@keras.saving.register_keras_serializable(package='molcraft')
+class PairFeature(Feature):
+
+    def __call__(self, mol: chem.Mol) -> np.ndarray:
+        if not isinstance(mol, chem.Mol):
+            raise TypeError(f'Input to {self.name} must be a `chem.Mol` instance.')
+        features = self.call(mol)
+        if len(features) != int(mol.num_atoms**2):
+            raise ValueError(
+                f'The number of features computed by {self.name} does not '
+                'match the number of node/atom pairs in the `chem.Mol` object. '
+                f'Make sure the list of items returned by {self.name}(input) '
+                'correspond to node/atom pairs: '
+                '[(0, 0), (0, 1), ..., (0, N), (1, 0), ... (N, N)], '
+                'where N denotes the number of nodes/atoms.'
+            )
+        func = (
+            self._featurize_categorical if self.vocab else 
+            self._featurize_floating
+        )
+        return np.asarray([func(x) for x in features], dtype=self.dtype)
+        
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class PairDistance(PairFeature):
+    
+    def __init__(
+        self, 
+        max_distance: int = None, 
+        allow_oov: int = True,
+        encode_oov: bool = True, 
+        **kwargs,
+    ) -> None:
+        vocab = kwargs.pop('vocab', None)
+        if not vocab:
+            if max_distance is None:
+                max_distance = 10
+            vocab = list(range(max_distance + 1))
+        super().__init__(
+            vocab=vocab, 
+            allow_oov=allow_oov, 
+            encode_oov=encode_oov, 
+            **kwargs
+        )
+
+    def call(self, mol: chem.Mol) -> list[int]:
+        return [int(x) for x in chem.get_distances(mol).reshape(-1)]
+    
+    
 default_vocabulary = {
     'AtomType': [
         '*', 'H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 'Na', 

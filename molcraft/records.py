@@ -14,7 +14,7 @@ from molcraft import featurizers
 
 def write(
     inputs: list[str | tuple], 
-    featurizer: featurizers.Featurizer,
+    featurizer: featurizers.GraphFeaturizer,
     path: str, 
     overwrite: bool = True, 
     num_files: typing.Optional[int] = None, 
@@ -23,10 +23,13 @@ def write(
     device: str = '/cpu:0'
 ) -> None:
     
-    if os.path.isdir(path) and not overwrite:
-        return 
-    
-    os.makedirs(path, exist_ok=True)
+    if os.path.isdir(path):
+        if not overwrite:
+            return
+        else:
+            _remove_files(path)
+    else:
+        os.makedirs(path)
 
     with tf.device(device):
 
@@ -133,7 +136,7 @@ def load_spec(path: str) -> tensors.GraphTensor.Spec:
 def _write_tfrecord(
     inputs, 
     path: str,
-    featurizer: featurizers.Featurizer, 
+    featurizer: featurizers.GraphFeaturizer, 
 ) -> None:
     
     def _write_example(tensor):
@@ -149,11 +152,7 @@ def _write_tfrecord(
                 x = tuple(x)
             tensor = featurizer(x)
             if tensor is not None:
-                if isinstance(tensor, tensors.GraphTensor):
-                    _write_example(tensor)
-                else:
-                    for t in tensor:
-                        _write_example(t)
+                _write_example(tensor)
 
 def _serialize_example(
     feature: dict[str, tf.train.Feature]
@@ -168,8 +167,18 @@ def _parse_example(
 ) -> tf.Tensor:
     out = tf.io.parse_single_example(
         x, features={'feature': tf.io.RaggedFeature(tf.string)})['feature']
-    out = [tf.ensure_shape(tf.io.parse_tensor(x[0], s.dtype), s.shape) for (x, s) in zip(
-        tf.split(out, len(tf.nest.flatten(spec, expand_composites=True))), 
-        tf.nest.flatten(spec, expand_composites=True))]
+    out = [
+        tf.ensure_shape(tf.io.parse_tensor(x[0], s.dtype), s.shape) 
+        for (x, s) in zip(
+            tf.split(out, len(tf.nest.flatten(spec, expand_composites=True))), 
+            tf.nest.flatten(spec, expand_composites=True)
+        )
+    ]
     out = tf.nest.pack_sequence_as(spec, tf.nest.flatten(out), expand_composites=True)
     return out
+
+def _remove_files(path):
+    for filename in os.listdir(path):
+        if filename.endswith('tfrecord') or filename == 'spec.pb':
+            filepath = os.path.join(path, filename)
+            os.remove(filepath)

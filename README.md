@@ -1,6 +1,6 @@
-<img src="https://github.com/akensert/molcraft/blob/main/docs/_static/molcraft-logo.png" alt="molcraft-logo">
+<img src="https://github.com/akensert/molcraft/blob/main/docs/_static/molcraft-logo.png" alt="molcraft-logo", width="90%">
 
-**Deep Learning on Molecules**: A Minimalistic GNN package for Molecular ML. 
+**Deep Learning on Molecules**: A Minimalistic GNN package for Molecular ML.
 
 > [!NOTE]  
 > In progress.
@@ -38,11 +38,12 @@ featurizer = featurizers.MolGraphFeaturizer(
         features.BondType(),
         features.IsRotatable(),
     ],
-    super_atom=True,
+    super_node=True,
     self_loops=True,
+    include_hydrogens=False,
 )
 
-graph = featurizer([('N[C@@H](C)C(=O)O', 2.0), ('N[C@@H](CS)C(=O)O', 1.0)])
+graph = featurizer([('N[C@@H](C)C(=O)O', 2.5), ('N[C@@H](CS)C(=O)O', 1.5)])
 print(graph)
 
 model = models.GraphModel.from_layers(
@@ -50,13 +51,13 @@ model = models.GraphModel.from_layers(
         layers.Input(graph.spec),
         layers.NodeEmbedding(dim=128),
         layers.EdgeEmbedding(dim=128),
-        layers.GraphTransformer(units=128),
-        layers.GraphTransformer(units=128),
-        layers.GraphTransformer(units=128),
-        layers.GraphTransformer(units=128),
-        layers.Readout(mode='mean'),
-        keras.layers.Dense(units=1024, activation='relu'),
-        keras.layers.Dense(units=1024, activation='relu'),
+        layers.GraphConv(units=128),
+        layers.GraphConv(units=128),
+        layers.GraphConv(units=128),
+        layers.GraphConv(units=128),
+        layers.Readout(),
+        keras.layers.Dense(units=1024, activation='elu'),
+        keras.layers.Dense(units=1024, activation='elu'),
         keras.layers.Dense(1)
     ]
 )
