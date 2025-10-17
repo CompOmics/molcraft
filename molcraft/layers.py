@@ -380,11 +380,14 @@ class GraphConv(GraphLayer):
             self._update_final_dense = self.get_dense(self.units)
 
         if not self._normalize:
-            self._normalization = keras.layers.Identity()
+            self._message_norm = keras.layers.Identity()
+            self._update_norm = keras.layers.Identity()
         elif str(self._normalize).lower().startswith('layer'):
-            self._normalization = keras.layers.LayerNormalization()
+            self._message_norm = keras.layers.LayerNormalization()
+            self._update_norm = keras.layers.LayerNormalization()
         else:
-            self._normalization = keras.layers.BatchNormalization()
+            self._message_norm = keras.layers.BatchNormalization()
+            self._update_norm = keras.layers.BatchNormalization()
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Forward pass.
@@ -430,15 +433,13 @@ class GraphConv(GraphLayer):
         elif add_aggregate:
             update = update.update({'node': {'aggregate': None}})
 
-        if not self._skip_connect and not self._normalize:
+        if not self._skip_connect:
             return update
         
         feature = update.node['feature']
 
         if self._skip_connect:
             feature += residual 
-
-        feature = self._normalization(feature)
 
         return update.update({'node': {'feature': feature}})
 
@@ -480,6 +481,7 @@ class GraphConv(GraphLayer):
                 axis=-1
             )
         message = self._message_intermediate_dense(message)
+        message = self._message_norm(message)
         message = self._message_intermediate_activation(message)
         message = self._message_final_dense(message)
         return tensor.update({'edge': {'message': message}})
@@ -519,6 +521,7 @@ class GraphConv(GraphLayer):
         """
         aggregate = tensor.node['aggregate']
         node_feature = self._update_intermediate_dense(aggregate)
+        node_feature = self._update_norm(node_feature)
         node_feature = self._update_intermediate_activation(node_feature)
         node_feature = self._update_final_dense(node_feature)
         return tensor.update(
@@ -1792,5 +1795,3 @@ def _spec_from_inputs(inputs):
         return spec
     return tensors.GraphTensor.Spec(**nested_specs)
 
-
-GraphTransformer = GTConv
