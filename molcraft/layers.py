@@ -1312,13 +1312,19 @@ class NodeEmbedding(GraphLayer):
 
     def __init__(
         self, 
-        dim: int = None, 
+        dim: int | None = None, 
+        intermediate_dim: int | None = None,
+        intermediate_activation: str | keras.layers.Activation | None = 'relu',
         normalize: bool = False,
         embed_context: bool = False,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self.dim = dim
+        self._intermediate_dim = intermediate_dim
+        self._intermediate_activation = keras.activations.get(
+            intermediate_activation
+        )
         self._normalize = normalize
         self._embed_context = embed_context
 
@@ -1326,30 +1332,38 @@ class NodeEmbedding(GraphLayer):
         feature_dim = spec.node['feature'].shape[-1]
         if not self.dim:
             self.dim = feature_dim
-        self._node_dense = self.get_dense(self.dim)
-
+        if not self._intermediate_dim:
+            self._intermediate_dim = self.dim * 2 
+        self._node_dense = self.get_dense(
+            self._intermediate_dim, activation=self._intermediate_activation
+        )
         self._has_super = 'super' in spec.node
         has_context_feature = 'feature' in spec.context
         if not has_context_feature:
             self._embed_context = False 
         if self._has_super and not self._embed_context:
-            self._super_feature = self.get_weight(shape=[self.dim], name='super_node_feature')
+            self._super_feature = self.get_weight(
+                shape=[self._intermediate_dim], name='super_node_feature'
+            )
         if self._embed_context:
-            self._context_dense = self.get_dense(self.dim)
-        
+            self._context_dense = self.get_dense(
+                self._intermediate_dim, activation=self._intermediate_activation
+            )
         if not self._normalize:
             self._norm = keras.layers.Identity()
         elif str(self._normalize).lower().startswith('layer'):
             self._norm = keras.layers.LayerNormalization()
         else:
             self._norm = keras.layers.BatchNormalization()
+        self._dense = self.get_dense(self.dim)
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         feature = self._node_dense(tensor.node['feature'])
 
         if self._has_super and not self._embed_context:
             super_mask = keras.ops.expand_dims(tensor.node['super'], 1)
-            feature = keras.ops.where(super_mask, self._super_feature, feature)
+            super_feature = self._intermediate_activation(self._super_feature)
+            feature = keras.ops.where(super_mask, super_feature, feature)
 
         if self._embed_context:
             context_feature = self._context_dense(tensor.context['feature'])
@@ -1357,6 +1371,7 @@ class NodeEmbedding(GraphLayer):
             tensor = tensor.update({'context': {'feature': None}})
 
         feature = self._norm(feature)
+        feature = self._dense(feature)
 
         return tensor.update({'node': {'feature': feature}})
 
@@ -1364,6 +1379,10 @@ class NodeEmbedding(GraphLayer):
         config = super().get_config()
         config.update({
             'dim': self.dim,
+            'intermediate_dim': self._intermediate_dim,
+            'intermediate_activation': keras.activations.serialize(
+                self._intermediate_activation
+            ),
             'normalize': self._normalize,
             'embed_context': self._embed_context,
         })
@@ -1381,50 +1400,67 @@ class EdgeEmbedding(GraphLayer):
     def __init__(
         self, 
         dim: int = None, 
+        intermediate_dim: int | None = None,
+        intermediate_activation: str | keras.layers.Activation | None = 'relu',
         normalize: bool = False,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self.dim = dim
+        self._intermediate_dim = intermediate_dim
+        self._intermediate_activation = keras.activations.get(
+            intermediate_activation
+        )
         self._normalize = normalize
 
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         feature_dim = spec.edge['feature'].shape[-1]
         if not self.dim:
             self.dim = feature_dim
-        self._edge_dense = self.get_dense(self.dim) 
-
-        self._self_loop_feature = self.get_weight(shape=[self.dim], name='self_loop_edge_feature')
-
+        if not self._intermediate_dim:
+            self._intermediate_dim = self.dim * 2 
+        self._edge_dense = self.get_dense(
+            self._intermediate_dim, activation=self._intermediate_activation
+        ) 
+        self._self_loop_feature = self.get_weight(
+            shape=[self._intermediate_dim], name='self_loop_edge_feature'
+        )
         self._has_super = 'super' in spec.edge
         if self._has_super:
-            self._super_feature = self.get_weight(shape=[self.dim], name='super_edge_feature')
-        
+            self._super_feature = self.get_weight(
+                shape=[self._intermediate_dim], name='super_edge_feature'
+            )
         if not self._normalize:
             self._norm = keras.layers.Identity()
         elif str(self._normalize).lower().startswith('layer'):
             self._norm = keras.layers.LayerNormalization()
         else:
             self._norm = keras.layers.BatchNormalization()
+        self._dense = self.get_dense(self.dim)
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         feature = self._edge_dense(tensor.edge['feature'])
 
         if self._has_super:
             super_mask = keras.ops.expand_dims(tensor.edge['super'], 1)
-            feature = keras.ops.where(super_mask, self._super_feature, feature)
+            super_feature = self._intermediate_activation(self._super_feature)
+            feature = keras.ops.where(super_mask, super_feature, feature)
 
         self_loop_mask = keras.ops.expand_dims(tensor.edge['source'] == tensor.edge['target'], 1)
-        feature = keras.ops.where(self_loop_mask, self._self_loop_feature, feature)
-
+        self_loop_feature = self._intermediate_activation(self._self_loop_feature)
+        feature = keras.ops.where(self_loop_mask, self_loop_feature, feature)
         feature = self._norm(feature)
-
+        feature = self._dense(feature)
         return tensor.update({'edge': {'feature': feature}})
 
     def get_config(self) -> dict:
         config = super().get_config()
         config.update({
             'dim': self.dim,
+            'intermediate_dim': self._intermediate_dim,
+            'intermediate_activation': keras.activations.serialize(
+                self._intermediate_activation
+            ),
             'normalize': self._normalize,
         })
         return config
@@ -1441,42 +1477,60 @@ class AddContext(GraphLayer):
     def __init__(
         self, 
         field: str = 'feature',
+        intermediate_dim: int | None = None,
+        intermediate_activation: str | keras.layers.Activation | None = 'relu',
         drop: bool = False,
         normalize: bool = False,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
-        self.field = field
-        self.drop = drop
+        self._field = field
+        self._drop = drop
+        self._intermediate_dim = intermediate_dim
+        self._intermediate_activation = keras.activations.get(
+            intermediate_activation
+        )
         self._normalize = normalize
         
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         feature_dim = spec.node['feature'].shape[-1]
-        self._context_dense = self.get_dense(feature_dim)
+        if self._intermediate_dim is None:
+            self._intermediate_dim = feature_dim * 2
+        self._intermediate_dense = self.get_dense(
+            self._intermediate_dim, activation=self._intermediate_activation
+        )
+        self._final_dense = self.get_dense(feature_dim)
         if not self._normalize:
-            self._norm = keras.layers.Identity()
+            self._intermediate_norm = keras.layers.Identity()
         elif str(self._normalize).lower().startswith('layer'):
-            self._norm = keras.layers.LayerNormalization()
+            self._intermediate_norm = keras.layers.LayerNormalization()
         else:
-            self._norm = keras.layers.BatchNormalization()
+            self._intermediate_norm = keras.layers.BatchNormalization()
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        context = tensor.context[self.field]
-        context = self._context_dense(context)
-        context = self._norm(context)
+        context = tensor.context[self._field]
+        context = self._intermediate_dense(context)
+        context = self._intermediate_norm(context)
+        context = self._final_dense(context)
         node_feature = ops.scatter_add(
             tensor.node['feature'], tensor.node['super'], context
         )
         data = {'node': {'feature': node_feature}}
-        if self.drop:
-            data['context'] = {self.field: None}
+        if self._drop:
+            data['context'] = {self._field: None}
         return tensor.update(data)
 
     def get_config(self) -> dict:
         config = super().get_config()
-        config['field'] = self.field 
-        config['drop'] = self.drop
-        config['normalize'] = self._normalize
+        config.update({
+            'field': self._field,
+            'intermediate_dim': self._intermediate_dim,
+            'intermediate_activation': keras.activations.serialize(
+                self._intermediate_activation
+            ),
+            'drop': self._drop,
+            'normalize': self._normalize,
+        })
         return config
 
 
