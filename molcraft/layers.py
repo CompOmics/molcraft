@@ -279,7 +279,7 @@ class GraphConv(GraphLayer):
         use_bias (bool):
             Whether bias should be used in the dense layers. Default to `True`.
         normalize (bool, str):
-            Whether normalization should be applied to the final output. Default to `False`.
+            Whether a normalization layer should be obtain by `get_norm()`. Default to `False`.
         skip_connect (bool):
             Whether node feature input should be added to the node feature output. Default to `True`.
         kernel_initializer (keras.initializers.Initializer, str):
@@ -366,6 +366,7 @@ class GraphConv(GraphLayer):
         has_overridden_message = self.__class__.message != GraphConv.message 
         if not has_overridden_message:
             self._message_intermediate_dense = self.get_dense(self.units)
+            self._message_norm = self.get_norm()
             self._message_intermediate_activation = self.activation
             self._message_final_dense = self.get_dense(self.units)
 
@@ -376,18 +377,9 @@ class GraphConv(GraphLayer):
         has_overridden_update = self.__class__.update != GraphConv.update 
         if not has_overridden_update:
             self._update_intermediate_dense = self.get_dense(self.units)
+            self._update_norm = self.get_norm()
             self._update_intermediate_activation = self.activation
             self._update_final_dense = self.get_dense(self.units)
-
-        if not self._normalize:
-            self._message_norm = keras.layers.Identity()
-            self._update_norm = keras.layers.Identity()
-        elif str(self._normalize).lower().startswith('layer'):
-            self._message_norm = keras.layers.LayerNormalization()
-            self._update_norm = keras.layers.LayerNormalization()
-        else:
-            self._message_norm = keras.layers.BatchNormalization()
-            self._update_norm = keras.layers.BatchNormalization()
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         """Forward pass.
@@ -533,6 +525,14 @@ class GraphConv(GraphLayer):
             }
         )
 
+    def get_norm(self, **kwargs):
+        if not self._normalize:
+            return keras.layers.Identity()
+        elif str(self._normalize).lower().startswith('layer'):
+            return keras.layers.LayerNormalization(**kwargs)
+        else:
+            return keras.layers.BatchNormalization(**kwargs)
+        
     def get_config(self) -> dict:
         config = super().get_config()
         config.update({
