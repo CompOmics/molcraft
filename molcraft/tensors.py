@@ -16,13 +16,15 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
             if isinstance(f, tf.TensorSpec):
                 return tf.TensorSpec(
                     shape=[None] + f.shape[1:],
-                    dtype=f.dtype)
+                    dtype=f.dtype
+                )
             elif isinstance(f, tf.RaggedTensorSpec):
                 return tf.RaggedTensorSpec(
                     shape=[batch_size, None] + f.shape[1:],
                     dtype=f.dtype,
                     ragged_rank=1,
-                    row_splits_dtype=f.row_splits_dtype)
+                    row_splits_dtype=f.row_splits_dtype
+                )
             elif isinstance(f, tf.TypeSpec):
                 return f.__batch_encoder__.batch(f, batch_size)
             return f
@@ -33,7 +35,8 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
         batched_spec = object.__new__(type(spec))
         batched_context_fields = tf.nest.map_structure(
             lambda spec: tf.TensorSpec([batch_size] + spec.shape, spec.dtype), 
-            context_fields)
+            context_fields
+        )
         batched_spec.__dict__.update({'context': batched_context_fields})
         batched_spec.__dict__.update(batched_fields)
         return batched_spec
@@ -46,13 +49,15 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
             if isinstance(f, tf.TensorSpec):
                 return tf.TensorSpec(
                     shape=[None] + f.shape[1:],
-                    dtype=f.dtype)
+                    dtype=f.dtype
+                )
             elif isinstance(f, tf.RaggedTensorSpec):
                 return tf.RaggedTensorSpec(
                     shape=[None] + f.shape[2:],
                     dtype=f.dtype,
                     ragged_rank=0,
-                    row_splits_dtype=f.row_splits_dtype)
+                    row_splits_dtype=f.row_splits_dtype
+                )
             elif isinstance(f, tf.TypeSpec):
                 return f.__batch_encoder__.unbatch(f)
             return f
@@ -62,7 +67,8 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
         unbatched_fields = tf.nest.map_structure(unbatch_field, fields)
         unbatched_context_fields = tf.nest.map_structure(
             lambda spec: tf.TensorSpec(spec.shape[1:], spec.dtype), 
-            context_fields)
+            context_fields
+        )
         unbatched_spec = object.__new__(type(spec))
         unbatched_spec.__dict__.update({'context': unbatched_context_fields})
         unbatched_spec.__dict__.update(unbatched_fields)
@@ -91,7 +97,8 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
                     shape=([None] if scalar else [None, None]) + f.shape[1:], 
                     dtype=f.dtype, 
                     ragged_rank=(0 if scalar else 1),
-                    row_splits_dtype=spec.context['size'].dtype)
+                    row_splits_dtype=spec.context['size'].dtype
+                )
             return f
         fields = dict(spec.__dict__)
         context_fields = fields.pop('context')
@@ -99,7 +106,7 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
         encoded_fields = {**{'context': context_fields}, **encoded_fields}
         spec_components = tuple(encoded_fields.values())
         spec_components = tuple(
-            x for x in tf.nest.flatten(spec_components) 
+            x for x in tf.nest.flatten(spec_components)
             if isinstance(x, tf.TypeSpec)
         )
         return spec_components
@@ -117,7 +124,6 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
         fields = dict(zip(spec.__dict__.keys(), value_tuple))
         value = object.__new__(spec.value_type)
         value.__dict__.update(fields)
-
         flatten = is_ragged(value) and not is_ragged(spec)
         if flatten:
             value = value.flatten()
@@ -125,7 +131,7 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
     
 
 class GraphTensor(tf.experimental.BatchableExtensionType):
-    context: typing.Mapping[str, typing.Union[tf.Tensor, tf.RaggedTensor]]
+    context: typing.Mapping[str, tf.Tensor]
     node: typing.Mapping[str, typing.Union[tf.Tensor, tf.RaggedTensor]]
     edge: typing.Mapping[str, typing.Union[tf.Tensor, tf.RaggedTensor]]
 
