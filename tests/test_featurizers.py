@@ -1,4 +1,6 @@
 import unittest 
+import tempfile
+import shutil
 
 from molcraft import features
 from molcraft import featurizers
@@ -42,6 +44,12 @@ class TestFeaturizer(unittest.TestCase):
             include_hydrogens=False, 
         ) 
 
+        tmp_dir = tempfile.mkdtemp()
+        tmp_file = tmp_dir + '/featurizer.json'
+        featurizers.save_featurizer(featurizer, tmp_file)
+        _ = featurizers.load_featurizer(tmp_file)
+        shutil.rmtree(tmp_dir)
+        
         node_dim = 9
         edge_dim = 4
 
@@ -126,6 +134,12 @@ class TestFeaturizer(unittest.TestCase):
             include_hydrogens=False, 
             radius=5.0, 
         ) 
+
+        tmp_dir = tempfile.mkdtemp()
+        tmp_file = tmp_dir + '/featurizer.json'
+        featurizers.save_featurizer(featurizer, tmp_file)
+        _ = featurizers.load_featurizer(tmp_file)
+        shutil.rmtree(tmp_dir)
 
         node_dim = 10
         edge_dim = 22

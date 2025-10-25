@@ -323,7 +323,9 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         include_hydrogens: bool = False,
         radius: int | float | None = 6.0,
         random_seed: int | None = None,
+        **kwargs,
     ) -> None:
+        kwargs.pop('bond_features', None)
         super().__init__(
             atom_features=atom_features,
             bond_features=None,
@@ -413,7 +415,6 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
 
     def get_config(self):
         config = super().get_config()
-        config.pop('bond_features', None)
         config['radius'] = self._radius
         config['pair_features'] = keras.saving.serialize_keras_object(
             self._pair_features
