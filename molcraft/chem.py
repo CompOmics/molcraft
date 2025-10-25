@@ -427,11 +427,9 @@ def embed_conformers(
             f'{num_conformers - num_successes} conformer(s) using different embedding methods.',
             stacklevel=2
         )
-        max_attempts = (20 * mol.num_atoms) # increasing it from 10xN to 20xN
         for fallback_method in [method, 'ETDG', 'KDG']:
             fallback_embedding_method = available_embedding_methods[fallback_method]
             fallback_embedding_method.useRandomCoords = True
-            fallback_embedding_method.maxAttempts = max_attempts
             fallback_embedding_method.clearConfs = False
             if random_seed is not None:
                 fallback_embedding_method.randomSeed = random_seed
@@ -463,14 +461,14 @@ def optimize_conformers(
             f'Could not find `method` {method!r}. Specify either of: '
             '`UFF`, `MMFF`, `MMFF94` or `MMFF94s`.'
         )
-    mol = Mol(mol)
+    mol_optimized = Mol(mol)
     try:
         if method.startswith('MMFF'):
             variant = method 
             if variant == 'MMFF':
                 variant += '94'
             _, _ = _mmff_optimize_conformers(
-                mol, 
+                mol_optimized, 
                 num_threads=num_threads, 
                 max_iter=max_iter, 
                 variant=variant,
@@ -478,7 +476,7 @@ def optimize_conformers(
             )
         else:
             _, _ = _uff_optimize_conformers(
-                mol,
+                mol_optimized,
                 num_threads=num_threads,
                 max_iter=max_iter,
                 vdw_threshold=vdw_threshold,
@@ -486,11 +484,11 @@ def optimize_conformers(
             )
     except RuntimeError as e:
         warnings.warn(
-            f'{method} force field minimization raised {e}. '
-            '\nProceeding without force field minimization.',
+            f'{method} force field minimization did not succeed. Proceeding without it.',
             stacklevel=2
         )
-    return mol
+        return mol
+    return mol_optimized
 
 def prune_conformers(
     mol: Mol,
