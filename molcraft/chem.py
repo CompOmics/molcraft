@@ -22,11 +22,18 @@ class Mol(Chem.Mol):
         if explicit_hs:
             rdkit_mol = Chem.AddHs(rdkit_mol) 
         rdkit_mol.__class__ = cls 
+        setattr(rdkit_mol, '_encoding', encoding)
         return rdkit_mol
 
     @property
     def canonical_smiles(self) -> str:
         return Chem.MolToSmiles(self, canonical=True)
+    
+    @property 
+    def encoding(self):
+        if hasattr(self, '_encoding'):
+            return self._encoding 
+        return None 
     
     @property
     def bonds(self) -> list['Bond']:
@@ -391,6 +398,7 @@ def embed_conformers(
     mol: Mol, 
     num_conformers: int, 
     method: str = 'ETKDGv3',
+    timeout: int | None = None, 
     random_seed: int | None = None, 
     **kwargs
 ) -> Mol:
@@ -403,6 +411,7 @@ def embed_conformers(
         'KDG': rdDistGeom.KDG()
     }
     mol = Mol(mol)
+    encoding = mol.encoding or mol.canonical_smiles
     embedding_method = available_embedding_methods.get(method)
     if embedding_method is None:
         raise ValueError(
@@ -413,8 +422,14 @@ def embed_conformers(
     for key, value in kwargs.items():
         setattr(embedding_method, key, value)
 
-    if random_seed is not None:
-        embedding_method.randomSeed = random_seed
+    if not timeout:
+        timeout = 0 # No timeout
+
+    if not random_seed:
+        random_seed = -1 # No random seed
+
+    embedding_method.randomSeed = random_seed
+    embedding_method.timeout = timeout
 
     success = rdDistGeom.EmbedMultipleConfs(
         mol, numConfs=num_conformers, params=embedding_method
@@ -422,17 +437,18 @@ def embed_conformers(
     num_successes = len(success)
     if num_successes < num_conformers:
         warnings.warn(
-            f'Could only embed {num_successes} out of {num_conformers} conformer(s) '
-            f'for {mol.canonical_smiles!r} using {method}. Embedding the remaining '
-            f'{num_conformers - num_successes} conformer(s) using different embedding methods.',
-            stacklevel=2
+            f'Could only embed {num_successes} out of {num_conformers} conformer(s) for '
+            f'{encoding!r} using the specified method ({method!r}) and parameters. Attempting '
+            f'to embed the remaining {num_conformers-num_successes} using fallback methods.',
         )
+        max_iters = 20 * mol.num_atoms # Doubling the number of iterations
         for fallback_method in [method, 'ETDG', 'KDG']:
             fallback_embedding_method = available_embedding_methods[fallback_method]
             fallback_embedding_method.useRandomCoords = True
+            fallback_embedding_method.maxIterations = int(max_iters)
             fallback_embedding_method.clearConfs = False
-            if random_seed is not None:
-                fallback_embedding_method.randomSeed = random_seed
+            fallback_embedding_method.timeout = int(timeout)
+            fallback_embedding_method.randomSeed = int(random_seed)
             success = rdDistGeom.EmbedMultipleConfs(
                 mol, numConfs=(num_conformers - num_successes), params=fallback_embedding_method
             )
@@ -441,7 +457,7 @@ def embed_conformers(
                 break
         else:
             raise RuntimeError(
-                f'Could not embed {num_conformers} conformer(s) for {mol.canonical_smiles!r}. '
+                f'Could not embed {num_conformers} conformer(s) for {encoding!r}. '
             )
     return mol
 
@@ -485,9 +501,8 @@ def optimize_conformers(
     except RuntimeError as e:
         warnings.warn(
             f'{method} force field minimization did not succeed. Proceeding without it.',
-            stacklevel=2
         )
-        return mol
+        return Mol(mol)
     return mol_optimized
 
 def prune_conformers(
@@ -500,7 +515,6 @@ def prune_conformers(
         warnings.warn(
             'Molecule has no conformers. To embed conformers, invoke the `embed` method, '
             'and optionally followed by `minimize()` to perform force field minimization.',
-            stacklevel=2
         )
         return mol
     
