@@ -2,8 +2,7 @@ import keras
 import json
 import abc
 import typing 
-import copy 
-import warnings
+import os
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -13,6 +12,7 @@ from pathlib import Path
 
 from molcraft import tensors 
 from molcraft import features
+from molcraft import records
 from molcraft import chem
 from molcraft import descriptors
 
@@ -41,6 +41,17 @@ class GraphFeaturizer(abc.ABC):
     def load(filepath: str | Path, *args, **kwargs) -> 'GraphFeaturizer':
         return load_featurizer(filepath, *args, **kwargs)
     
+    def write_records(self, inputs: str | chem.Mol | tuple, path: str | Path, **kwargs) -> None:
+         records.write(
+            inputs, featurizer=self, path=path, **kwargs
+         )
+
+    @staticmethod
+    def read_records(path: str | Path, **kwargs) -> tf.data.Dataset:
+        return records.read(
+            path=path, **kwargs
+        )
+        
     def __call__(
         self,
         inputs: str | chem.Mol | tuple | typing.Iterable,

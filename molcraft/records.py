@@ -3,20 +3,24 @@ import math
 import glob
 import time
 import typing 
+import warnings
 import tensorflow as tf
 import numpy as np
 import pandas as pd
 import multiprocessing as mp
 
 from molcraft import tensors
-from molcraft import featurizers
+
+if typing.TYPE_CHECKING:
+    from molcraft import featurizers
 
 
 def write(
     inputs: list[str | tuple], 
-    featurizer: featurizers.GraphFeaturizer,
+    featurizer: 'featurizers.GraphFeaturizer',
     path: str, 
-    overwrite: bool = True, 
+    exist_ok: bool = False,
+    overwrite: bool = False, 
     num_files: typing.Optional[int] = None, 
     num_processes: typing.Optional[int] = None,
     multiprocessing: bool = False,
@@ -24,6 +28,8 @@ def write(
 ) -> None:
     
     if os.path.isdir(path):
+        if not exist_ok:
+            raise FileExistsError(f'Records already exist: {path}')
         if not overwrite:
             return
         else:
@@ -60,9 +66,11 @@ def write(
             chunk_sizes[i % num_files] += 1
         
         input_chunks = []
+        start_indices = []
         current_index = 0
         for size in chunk_sizes:
             input_chunks.append(inputs[current_index: current_index + size])
+            start_indices.append(current_index)
             current_index += size 
         
         assert current_index == num_examples
@@ -73,13 +81,13 @@ def write(
         ]
         
         if not multiprocessing:
-            for path, input_chunk in zip(paths, input_chunks):
-                _write_tfrecord(input_chunk, path, featurizer)
+            for path, input_chunk, start_index in zip(paths, input_chunks, start_indices):
+                _write_tfrecord(input_chunk, path, featurizer, start_index)
             return
         
         processes = []
         
-        for path, input_chunk in zip(paths, input_chunks):
+        for path, input_chunk, start_index in zip(paths, input_chunks, start_indices):
         
             while len(processes) >= num_processes:
                 for process in processes:
@@ -91,7 +99,7 @@ def write(
                     
             process = mp.Process(
                 target=_write_tfrecord,
-                args=(input_chunk, path, featurizer)
+                args=(input_chunk, path, featurizer, start_index)
             )
             processes.append(process)
             process.start()
@@ -134,9 +142,10 @@ def load_spec(path: str) -> tensors.GraphTensor.Spec:
     return spec
     
 def _write_tfrecord(
-    inputs, 
+    inputs: list[str, tuple], 
     path: str,
-    featurizer: featurizers.GraphFeaturizer, 
+    featurizer: 'featurizers.GraphFeaturizer', 
+    start_index: int,
 ) -> None:
     
     def _write_example(tensor):
@@ -147,12 +156,17 @@ def _write_tfrecord(
         writer.write(serialized_feature)
 
     with tf.io.TFRecordWriter(path) as writer:
-        for x in inputs:
+        for i, x in enumerate(inputs):
             if isinstance(x, (list, np.ndarray)):
                 x = tuple(x)
-            tensor = featurizer(x)
-            if tensor is not None:
+            try:
+                tensor = featurizer(x)
                 _write_example(tensor)
+            except Exception as e:
+                warnings.warn(
+                    f"Could not write record for index {i + start_index}, proceeding without it."
+                    f"Exception raised:\n{e}"
+                )
 
 def _serialize_example(
     feature: dict[str, tf.train.Feature]
