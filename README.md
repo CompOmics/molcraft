@@ -1,4 +1,4 @@
-<img src="https://github.com/akensert/molcraft/blob/main/docs/_static/molcraft-logo.png" alt="molcraft-logo", width="90%">
+<img src="https://github.com/akensert/molcraft/blob/main/docs/_static/molcraft-logo.png" alt="molcraft-logo" width="90%">
 
 **Deep Learning on Molecules**: A Minimalistic GNN package for Molecular ML.
 
