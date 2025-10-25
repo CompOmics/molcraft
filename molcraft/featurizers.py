@@ -413,6 +413,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
 
     def get_config(self):
         config = super().get_config()
+        config.pop('bond_features', None)
         config['radius'] = self._radius
         config['pair_features'] = keras.saving.serialize_keras_object(
             self._pair_features
