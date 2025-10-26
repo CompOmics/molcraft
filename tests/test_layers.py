@@ -5,8 +5,10 @@ import keras
 from molcraft import tensors 
 from molcraft import layers 
 
+from .base_test import MolCraftTest
 
-class TestLayer(unittest.TestCase):
+
+class TestLayer(MolCraftTest):
 
     def setUp(self):
 

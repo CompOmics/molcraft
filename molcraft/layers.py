@@ -1,7 +1,6 @@
 import logging
 import keras 
 import tensorflow as tf
-import warnings
 import functools
 from keras.src.models import functional
 
@@ -353,12 +352,9 @@ class GraphConv(GraphLayer):
             self._skip_connect and (node_feature_dim != self.units)
         )
         if self._project_residual:
-            warnings.warn(
-                '`skip_connect` is set to `True`, but found incompatible dim '
-                'between input (node feature dim) and output (`self.units`). '
-                'Automatically applying a projection layer to residual to '
-                'match input and output. ',
-                stacklevel=2,
+            logger.info(
+                'Found incompatible dim between input and output. Applying '
+                'a projection layer to residual to match input and output dim.',
             )
             self._residual_dense = self.get_dense(
                 self.units, name='residual_dense'
@@ -616,11 +612,9 @@ class GIConv(GraphConv):
 
             if not self._update_edge_feature:
                 if (edge_feature_dim != node_feature_dim):
-                    warnings.warn(
-                        'Found edge feature dim to be incompatible with node feature dim. '
-                        'Automatically adding a edge feature projection layer to match '
-                        'the dim of node features.',
-                        stacklevel=2,
+                    logger.info(
+                        'Found edge and node feature dim to be incompatible. Applying a '
+                        'projection layer to edge features to match the dim of the node features.',
                     )
                     self._update_edge_feature = True 
 
@@ -873,11 +867,11 @@ class MPConv(GraphConv):
         self.update_fn = keras.layers.GRUCell(self.units)
         self._project_previous_node_feature = node_feature_dim != self.units
         if self._project_previous_node_feature:
-            warnings.warn(
-                'Input node feature dim does not match updated node feature dim. '
-                'To make sure input node feature can be passed as `states` to the '
-                'GRU cell, it will automatically be projected prior to it.',
-                stacklevel=2
+            logger.info(
+                'Inputted node feature dim does not match updated node feature dim, '
+                'which is required for the GRU update. Applying a projection layer to '
+                'the inputted node features prior to the GRU update, to match dim '
+                'of the updated node feature dim.'
             )
             self._previous_node_dense = self.get_dense(self.units)
 
@@ -1563,10 +1557,9 @@ class GraphNetwork(GraphLayer):
         node_feature_dim = spec.node['feature'].shape[-1]
         self._update_node_feature = node_feature_dim != units 
         if self._update_node_feature:
-            warnings.warn(
+            logger.info(
                 'Node feature dim does not match `units` of the first layer. '
-                'Automatically adding a node projection layer to match `units`.',
-                stacklevel=2
+                'Applying a projection layer to node features to match `units`.',
             )
             self._node_dense = self.get_dense(units)
         self._has_edge_feature = 'feature' in spec.edge 
@@ -1574,10 +1567,9 @@ class GraphNetwork(GraphLayer):
             edge_feature_dim = spec.edge['feature'].shape[-1]
             self._update_edge_feature = edge_feature_dim != units
             if self._update_edge_feature:
-                warnings.warn(
+                logger.info(
                     'Edge feature dim does not match `units` of the first layer. '
-                    'Automatically adding a edge projection layer to match `units`.',
-                    stacklevel=2
+                    'Applying projection layer to edge features to match `units`.'
                 )
                 self._edge_dense = self.get_dense(units)
 

@@ -8,8 +8,10 @@ from molcraft import tensors
 from molcraft import layers 
 from molcraft import models
 
+from .base_test import MolCraftTest
 
-class TestModel(unittest.TestCase):
+
+class TestModel(MolCraftTest):
 
     def setUp(self):
 
@@ -267,3 +269,7 @@ class TestModel(unittest.TestCase):
                 out = model.embedding()(tensor)
                 self.assertTrue(out.shape[0] == tensor.context['size'].shape[0])
                 self.assertTrue(out.shape[1] == units)
+
+
+if __name__ == '__main__':
+    unittest.main()

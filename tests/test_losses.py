@@ -3,8 +3,10 @@ import keras
 
 from molcraft import losses
 
+from .base_test import MolCraftTest
 
-class TestLoss(unittest.TestCase):
+
+class TestLoss(MolCraftTest):
 
     def test_gaussian_nll(self):
         loss = losses.GaussianNegativeLogLikelihood(events=3)
@@ -22,3 +24,7 @@ class TestLoss(unittest.TestCase):
         )
         self.assertGreater(value, 0)
         self.assertEqual(len(keras.ops.shape(value)), 0)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -2,7 +2,6 @@ import logging
 import abc
 import math
 import keras
-import warnings
 import numpy as np
 
 from molcraft import chem
@@ -110,10 +109,9 @@ class Feature(abc.ABC):
                 'type `float`, `int`, `bool` or `None`.'
             )
         if not math.isfinite(value):
-            warnings.warn(
+            logger.warning(
                 f'Found value of {self.name} to be non-finite. '
                 f'Value received: {value}. Converting it to a value of 0.',
-                stacklevel=2
             )
             value = 0.0
         return np.asarray([value], dtype=self.dtype)

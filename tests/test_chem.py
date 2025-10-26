@@ -3,8 +3,10 @@ import numpy as np
 
 from molcraft import chem
 
+from .base_test import MolCraftTest
 
-class TestChem(unittest.TestCase):
+
+class TestChem(MolCraftTest):
 
     def setUp(self):
         self.smiles = [
@@ -12,3 +14,6 @@ class TestChem(unittest.TestCase):
             "N1[C@@H](CCC1)C(=O)O",
         ] 
 
+
+if __name__ == '__main__':
+    unittest.main()

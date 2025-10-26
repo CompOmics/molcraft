@@ -6,8 +6,10 @@ from molcraft import features
 from molcraft import descriptors
 from molcraft import featurizers
 
+from .base_test import MolCraftTest
 
-class TestFeaturizer(unittest.TestCase):
+
+class TestFeaturizer(MolCraftTest):
 
     def setUp(self):
 
@@ -201,7 +203,6 @@ class TestFeaturizer(unittest.TestCase):
             self.assertEqual(graph.edge['feature'].dtype.name, 'float32')
             self.assertEqual(graph.edge['source'].dtype.name, 'int32')
             self.assertEqual(graph.edge['target'].dtype.name, 'int32')
-
 
 
 if __name__ == '__main__':

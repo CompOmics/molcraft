@@ -4,7 +4,6 @@ import math
 import glob
 import time
 import typing 
-import warnings
 import tensorflow as tf
 import numpy as np
 import pandas as pd
@@ -167,9 +166,9 @@ def _write_tfrecord(
                 tensor = featurizer(x)
                 _write_example(tensor)
             except Exception as e:
-                warnings.warn(
-                    f"Could not write record for index {i + start_index}, proceeding without it."
-                    f"Exception raised:\n{e}"
+                logger.warning(
+                    f'Could not write record for index {i + start_index}, proceeding without it.'
+                    f'Exception raised:\n{e}'
                 )
 
 def _serialize_example(

@@ -1,5 +1,4 @@
 import logging
-import warnings
 import collections
 import numpy as np
 
@@ -36,10 +35,8 @@ class Mol(Chem.Mol):
     
     @property 
     def encoding(self):
-        if hasattr(self, '_encoding'):
-            return self._encoding 
-        return None 
-    
+        return getattr(self, '_encoding', None)
+        
     @property
     def bonds(self) -> list['Bond']:
         if not hasattr(self, '_bonds'):
@@ -72,7 +69,7 @@ class Mol(Chem.Mol):
             atom = atom.GetIdx()
         return Atom.cast(self.GetAtomWithIdx(int(atom)))
     
-    def get_path_between_atoms(
+    def get_shortest_path_between_atoms(
         self, 
         atom_i: int | Chem.Atom, 
         atom_j: int | Chem.Atom
@@ -112,13 +109,13 @@ class Mol(Chem.Mol):
 
     def get_conformer(self, index: int = 0) -> 'Conformer':
         if self.num_conformers == 0:
-            warnings.warn('Molecule has no conformer.')
+            logger.warning(f'{self} has no conformer. Returning None.')
             return None
         return Conformer.cast(self.GetConformer(index))
     
     def get_conformers(self) -> list['Conformer']:
         if self.num_conformers == 0:
-            warnings.warn('Molecule has no conformer.')
+            logger.warning(f'{self} has no conformers. Returning an empty list.')
             return []
         return [Conformer.cast(x) for x in self.GetConformers()]
      
@@ -129,7 +126,8 @@ class Mol(Chem.Mol):
         return None
     
     def __repr__(self) -> str:
-        return f'<{self.__class__.__name__} {self.canonical_smiles} at {hex(id(self))}>'
+        encoding = self.encoding or self.canonical_smiles
+        return f'<{self.__class__.__name__} {encoding} at {hex(id(self))}>'
 
 
 class Conformer(Chem.Conformer):
@@ -256,7 +254,10 @@ def sanitize_mol(
     flag = Chem.SanitizeMol(mol, catchErrors=True)
     if flag != Chem.SanitizeFlags.SANITIZE_NONE:
         if strict:
-            return None
+            raise ValueError(f'Could not sanitize {mol}.')
+        logger.warning(
+            f'Could not sanitize {mol}. Proceeding with partial sanitization.'
+        )
         # Sanitize mol, excluding the steps causing the error previously
         Chem.SanitizeMol(mol, sanitizeOps=Chem.SanitizeFlags.SANITIZE_ALL^flag)
     if assign_stereo_chemistry:
@@ -416,13 +417,12 @@ def embed_conformers(
         'KDG': rdDistGeom.KDG()
     }
     mol = Mol(mol)
-    encoding = mol.encoding or mol.canonical_smiles
     embedding_method = available_embedding_methods.get(method)
     if embedding_method is None:
-        raise ValueError(
-            f'Could not find `method` {method!r}. Specify either of: '
-            '`ETDG`, `ETKDG`, `ETKDGv2`, `ETKDGv3`, `srETKDGv3` or `KDG`.'
+        logger.warning(
+            f'{method} is not available. Proceeding with ETKDGv3.'
         )
+        embedding_method = available_embedding_methods['ETKDGv3']
 
     for key, value in kwargs.items():
         setattr(embedding_method, key, value)
@@ -441,10 +441,10 @@ def embed_conformers(
     )
     num_successes = len(success)
     if num_successes < num_conformers:
-        warnings.warn(
+        logger.warning(
             f'Could only embed {num_successes} out of {num_conformers} conformer(s) for '
-            f'{encoding!r} using the specified method ({method!r}) and parameters. Attempting '
-            f'to embed the remaining {num_conformers-num_successes} using fallback methods.',
+            f'{mol} using the specified method ({method}) and parameters. Attempting to '
+            f'embed the remaining {num_conformers-num_successes} using fallback methods.',
         )
         max_iters = 20 * mol.num_atoms # Doubling the number of iterations
         for fallback_method in [method, 'ETDG', 'KDG']:
@@ -462,7 +462,7 @@ def embed_conformers(
                 break
         else:
             raise RuntimeError(
-                f'Could not embed {num_conformers} conformer(s) for {encoding!r}. '
+                f'Could not embed {num_conformers} conformer(s) for {mol}. '
             )
     return mol
 
@@ -474,14 +474,17 @@ def optimize_conformers(
     ignore_interfragment_interactions: bool = True,
     vdw_threshold: float = 10.0,
 ) -> Mol:
-    available_force_field_methods = [
-        'MMFF', 'MMFF94', 'MMFF94s', 'UFF'
-    ]
-    if method not in available_force_field_methods:
-        raise ValueError(
-            f'Could not find `method` {method!r}. Specify either of: '
-            '`UFF`, `MMFF`, `MMFF94` or `MMFF94s`.'
+    if mol.num_conformers == 0:
+        logger.warning(
+            f'{mol} has no conformers to optimize. Proceeding without it.'
         )
+        return Mol(mol)
+    available_force_field_methods = ['MMFF', 'MMFF94', 'MMFF94s', 'UFF']
+    if method not in available_force_field_methods:
+        logger.warning(
+            f'{method} is not available. Proceeding with universal force field (UFF).'
+        )
+        method = 'UFF'
     mol_optimized = Mol(mol)
     try:
         if method.startswith('MMFF'):
@@ -504,8 +507,8 @@ def optimize_conformers(
                 ignore_interfragment_interactions=ignore_interfragment_interactions,
             )
     except RuntimeError as e:
-        warnings.warn(
-            f'{method} force field minimization did not succeed. Proceeding without it.',
+        logger.warning(
+            f'Unsuccessful {method} force field minimization for {mol}. Proceeding without it.',
         )
         return Mol(mol)
     return mol_optimized
@@ -517,11 +520,10 @@ def prune_conformers(
     energy_force_field: str = 'UFF',
 ) -> Mol:
     if mol.num_conformers == 0:
-        warnings.warn(
-            'Molecule has no conformers. To embed conformers, invoke the `embed` method, '
-            'and optionally followed by `minimize()` to perform force field minimization.',
+        logger.warning(
+            f'{mol} has no conformers to prune. Proceeding without it.'
         )
-        return mol
+        return Chem.Mol(mol)
     
     threshold = threshold or 0.0
     deviations = conformer_deviations(mol)
