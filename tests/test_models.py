@@ -8,10 +8,8 @@ from molcraft import tensors
 from molcraft import layers 
 from molcraft import models
 
-from .base_test import MolCraftTest
 
-
-class TestModel(MolCraftTest):
+class TestModel(unittest.TestCase):
 
     def setUp(self):
 

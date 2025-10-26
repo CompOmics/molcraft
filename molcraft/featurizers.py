@@ -1,4 +1,4 @@
-import logging
+import warnings
 import keras 
 import json
 import abc
@@ -15,9 +15,6 @@ from molcraft import features
 from molcraft import records
 from molcraft import chem
 from molcraft import descriptors
-
-
-logger = logging.getLogger(__name__)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')

@@ -1,4 +1,4 @@
-import logging
+import warnings
 import os
 import math
 import glob
@@ -13,9 +13,6 @@ from molcraft import tensors
 
 if typing.TYPE_CHECKING:
     from molcraft import featurizers
-
-
-logger = logging.getLogger(__name__)
 
 
 def write(
@@ -166,7 +163,7 @@ def _write_tfrecord(
                 tensor = featurizer(x)
                 _write_example(tensor)
             except Exception as e:
-                logger.warning(
+                warnings.warn(
                     f'Could not write record for index {i + start_index}, proceeding without it.'
                     f'Exception raised:\n{e}'
                 )

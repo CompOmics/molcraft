@@ -3,10 +3,8 @@ import keras
 
 from molcraft import losses
 
-from .base_test import MolCraftTest
 
-
-class TestLoss(MolCraftTest):
+class TestLoss(unittest.TestCase):
 
     def test_gaussian_nll(self):
         loss = losses.GaussianNegativeLogLikelihood(events=3)

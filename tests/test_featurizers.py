@@ -6,10 +6,8 @@ from molcraft import features
 from molcraft import descriptors
 from molcraft import featurizers
 
-from .base_test import MolCraftTest
 
-
-class TestFeaturizer(MolCraftTest):
+class TestFeaturizer(unittest.TestCase):
 
     def setUp(self):
 

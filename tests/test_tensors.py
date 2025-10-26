@@ -5,10 +5,8 @@ import tensorflow as tf
 
 from molcraft import tensors 
 
-from .base_test import MolCraftTest
 
-
-class TestGraphTensor(MolCraftTest):
+class TestGraphTensor(unittest.TestCase):
 
     def setUp(self):
         self.flat_tensors = [

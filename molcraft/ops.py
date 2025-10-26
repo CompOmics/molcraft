@@ -1,11 +1,8 @@
-import logging
+import warnings
 import keras
 import numpy as np
 import tensorflow as tf
 from keras import backend
-
-
-logger = logging.getLogger(__name__)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')

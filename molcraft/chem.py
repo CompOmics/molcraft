@@ -1,4 +1,4 @@
-import logging
+import warnings
 import collections
 import numpy as np
 
@@ -13,9 +13,6 @@ from rdkit.Chem import rdPartialCharges
 from rdkit.Chem import rdMolDescriptors
 from rdkit.Chem import rdForceFieldHelpers
 from rdkit.Chem import rdFingerprintGenerator
-
-
-logger = logging.getLogger(__name__)
 
 
 class Mol(Chem.Mol):
@@ -109,13 +106,13 @@ class Mol(Chem.Mol):
 
     def get_conformer(self, index: int = 0) -> 'Conformer':
         if self.num_conformers == 0:
-            logger.warning(f'{self} has no conformer. Returning None.')
+            warnings.warn(f'{self} has no conformer. Returning None.')
             return None
         return Conformer.cast(self.GetConformer(index))
     
     def get_conformers(self) -> list['Conformer']:
         if self.num_conformers == 0:
-            logger.warning(f'{self} has no conformers. Returning an empty list.')
+            warnings.warn(f'{self} has no conformers. Returning an empty list.')
             return []
         return [Conformer.cast(x) for x in self.GetConformers()]
      
@@ -255,7 +252,7 @@ def sanitize_mol(
     if flag != Chem.SanitizeFlags.SANITIZE_NONE:
         if strict:
             raise ValueError(f'Could not sanitize {mol}.')
-        logger.warning(
+        warnings.warn(
             f'Could not sanitize {mol}. Proceeding with partial sanitization.'
         )
         # Sanitize mol, excluding the steps causing the error previously
@@ -419,7 +416,7 @@ def embed_conformers(
     mol = Mol(mol)
     embedding_method = available_embedding_methods.get(method)
     if embedding_method is None:
-        logger.warning(
+        warnings.warn(
             f'{method} is not available. Proceeding with ETKDGv3.'
         )
         embedding_method = available_embedding_methods['ETKDGv3']
@@ -441,7 +438,7 @@ def embed_conformers(
     )
     num_successes = len(success)
     if num_successes < num_conformers:
-        logger.warning(
+        warnings.warn(
             f'Could only embed {num_successes} out of {num_conformers} conformer(s) for '
             f'{mol} using the specified method ({method}) and parameters. Attempting to '
             f'embed the remaining {num_conformers-num_successes} using fallback methods.',
@@ -466,6 +463,9 @@ def embed_conformers(
             )
     return mol
 
+
+import warnings 
+
 def optimize_conformers(
     mol: Mol,
     method: str = 'UFF',
@@ -475,13 +475,13 @@ def optimize_conformers(
     vdw_threshold: float = 10.0,
 ) -> Mol:
     if mol.num_conformers == 0:
-        logger.warning(
+        warnings.warn(
             f'{mol} has no conformers to optimize. Proceeding without it.'
         )
         return Mol(mol)
     available_force_field_methods = ['MMFF', 'MMFF94', 'MMFF94s', 'UFF']
     if method not in available_force_field_methods:
-        logger.warning(
+        warnings.warn(
             f'{method} is not available. Proceeding with universal force field (UFF).'
         )
         method = 'UFF'
@@ -507,7 +507,7 @@ def optimize_conformers(
                 ignore_interfragment_interactions=ignore_interfragment_interactions,
             )
     except RuntimeError as e:
-        logger.warning(
+        warnings.warn(
             f'Unsuccessful {method} force field minimization for {mol}. Proceeding without it.',
         )
         return Mol(mol)
@@ -520,7 +520,7 @@ def prune_conformers(
     energy_force_field: str = 'UFF',
 ) -> Mol:
     if mol.num_conformers == 0:
-        logger.warning(
+        warnings.warn(
             f'{mol} has no conformers to prune. Proceeding without it.'
         )
         return Chem.Mol(mol)

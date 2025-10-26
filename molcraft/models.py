@@ -1,4 +1,4 @@
-import logging
+import warnings
 import typing
 import keras
 import numpy as np
@@ -9,9 +9,6 @@ from keras.src.models import functional
 from molcraft import layers
 from molcraft import tensors
 from molcraft import ops
-
-
-logger = logging.getLogger(__name__)
 
 
 @keras.saving.register_keras_serializable(package="molcraft")

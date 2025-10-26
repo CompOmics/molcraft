@@ -1,4 +1,4 @@
-import logging
+import warnings
 import keras
 import numpy as np
 
@@ -6,9 +6,6 @@ from rdkit.Chem import rdMolDescriptors
 
 from molcraft import chem
 from molcraft import features
-
-
-logger = logging.getLogger(__name__)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')

@@ -1,13 +1,10 @@
-import logging
+import warnings
 import tensorflow as tf 
 import keras
 import typing 
 from tensorflow.python.framework import composite_tensor
 
 from molcraft import ops
-
-
-logger = logging.getLogger(__name__)
 
 
 class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):

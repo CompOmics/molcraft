@@ -1,13 +1,10 @@
-import logging
+import warnings
 import abc
 import math
 import keras
 import numpy as np
 
 from molcraft import chem
-
-
-logger = logging.getLogger(__name__)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -109,7 +106,7 @@ class Feature(abc.ABC):
                 'type `float`, `int`, `bool` or `None`.'
             )
         if not math.isfinite(value):
-            logger.warning(
+            warnings.warn(
                 f'Found value of {self.name} to be non-finite. '
                 f'Value received: {value}. Converting it to a value of 0.',
             )

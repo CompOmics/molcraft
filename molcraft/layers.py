@@ -1,4 +1,4 @@
-import logging
+import warnings
 import keras 
 import tensorflow as tf
 import functools
@@ -6,9 +6,6 @@ from keras.src.models import functional
 
 from molcraft import tensors
 from molcraft import ops 
-
-
-logger = logging.getLogger(__name__)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -352,7 +349,7 @@ class GraphConv(GraphLayer):
             self._skip_connect and (node_feature_dim != self.units)
         )
         if self._project_residual:
-            logger.info(
+            warnings.warn(
                 'Found incompatible dim between input and output. Applying '
                 'a projection layer to residual to match input and output dim.',
             )
@@ -612,7 +609,7 @@ class GIConv(GraphConv):
 
             if not self._update_edge_feature:
                 if (edge_feature_dim != node_feature_dim):
-                    logger.info(
+                    warnings.warn(
                         'Found edge and node feature dim to be incompatible. Applying a '
                         'projection layer to edge features to match the dim of the node features.',
                     )
@@ -867,7 +864,7 @@ class MPConv(GraphConv):
         self.update_fn = keras.layers.GRUCell(self.units)
         self._project_previous_node_feature = node_feature_dim != self.units
         if self._project_previous_node_feature:
-            logger.info(
+            warnings.warn(
                 'Inputted node feature dim does not match updated node feature dim, '
                 'which is required for the GRU update. Applying a projection layer to '
                 'the inputted node features prior to the GRU update, to match dim '
@@ -1557,7 +1554,7 @@ class GraphNetwork(GraphLayer):
         node_feature_dim = spec.node['feature'].shape[-1]
         self._update_node_feature = node_feature_dim != units 
         if self._update_node_feature:
-            logger.info(
+            warnings.warn(
                 'Node feature dim does not match `units` of the first layer. '
                 'Applying a projection layer to node features to match `units`.',
             )
@@ -1567,7 +1564,7 @@ class GraphNetwork(GraphLayer):
             edge_feature_dim = spec.edge['feature'].shape[-1]
             self._update_edge_feature = edge_feature_dim != units
             if self._update_edge_feature:
-                logger.info(
+                warnings.warn(
                     'Edge feature dim does not match `units` of the first layer. '
                     'Applying projection layer to edge features to match `units`.'
                 )

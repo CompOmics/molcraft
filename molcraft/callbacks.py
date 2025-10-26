@@ -1,9 +1,6 @@
-import logging
+import warnings
 import keras
 import numpy as np
-
-
-logger = logging.getLogger(__name__)
 
 
 class TensorBoard(keras.callbacks.TensorBoard):

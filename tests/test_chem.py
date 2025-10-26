@@ -3,10 +3,8 @@ import numpy as np
 
 from molcraft import chem
 
-from .base_test import MolCraftTest
 
-
-class TestChem(MolCraftTest):
+class TestChem(unittest.TestCase):
 
     def setUp(self):
         self.smiles = [

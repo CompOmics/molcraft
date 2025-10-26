@@ -1,10 +1,7 @@
-import logging
+import warnings
 import numpy as np
 import pandas as pd
 import typing
-
-
-logger = logging.getLogger(__name__)
 
 
 def split(
