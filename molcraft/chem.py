@@ -3,6 +3,7 @@ import collections
 import numpy as np
 
 from rdkit import Chem
+from rdkit.Chem import AllChem
 from rdkit.Chem import Lipinski
 from rdkit.Chem import rdDistGeom
 from rdkit.Chem import rdDepictor
