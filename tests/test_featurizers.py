@@ -3,6 +3,7 @@ import tempfile
 import shutil
 
 from molcraft import features
+from molcraft import descriptors
 from molcraft import featurizers
 
 
@@ -128,6 +129,9 @@ class TestFeaturizer(unittest.TestCase):
             ],
             pair_features=[
                 features.PairDistance(max_distance=20)
+            ],
+            molecule_features=[
+                descriptors.ForceFieldEnergy(),
             ],
             super_node=True,
             self_loops=False,
