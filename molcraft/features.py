@@ -41,14 +41,14 @@ class Feature(abc.ABC):
     
     def __call__(self, mol: chem.Mol) -> np.ndarray:
         if not isinstance(mol, chem.Mol):
-            raise TypeError(f'Input to {self.name} must be a `chem.Mol` instance.')
+            raise TypeError(f'Input to {self.name} must be a `chem.Mol` object.')
         features = self.call(mol)
         if len(features) != mol.num_atoms and len(features) != mol.num_bonds:
             raise ValueError(
                 f'The number of features computed by {self.name} does not '
                 'match the number of atoms or bonds of the `chem.Mol` object. '
-                'Make sure to iterate over `atoms` or `bonds` of `chem.Mol` '
-                'when computing features.'
+                'Make sure to iterate over `atoms` or `bonds` of the `chem.Mol` '
+                'object when computing features.'
             )
         if len(features) == 0:
             # Edge case: no atoms or bonds in the molecule.
