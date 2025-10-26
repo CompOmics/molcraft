@@ -1,5 +1,6 @@
 import keras
 import numpy as np
+
 from rdkit.Chem import rdMolDescriptors
 
 from molcraft import chem
@@ -12,9 +13,7 @@ class Descriptor(features.Feature):
     def __call__(self, mol: chem.Mol) -> np.ndarray:
         if not isinstance(mol, chem.Mol):
             raise ValueError(
-                f'Input to {self.name} needs to be a `chem.Mol`, which '
-                'implements two properties that should be iterated over '
-                'to compute features: `atoms` and `bonds`.'
+                f'Input to {self.name} must be a `chem.Mol` object.'
             )
         descriptor = self.call(mol)
         func = (
@@ -29,6 +28,23 @@ class Descriptor(features.Feature):
             descriptors.append(func(value))
         return np.concatenate(descriptors)
     
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class Descriptor3D(Descriptor):
+    
+    def __call__(self, mol: chem.Mol) -> np.ndarray:
+        if not isinstance(mol, chem.Mol):
+            raise ValueError(
+                f'Input to {self.name} must be a `chem.Mol` object.'
+            ) 
+        if mol.num_conformers == 0:
+            raise ValueError(
+                f'The inputted `chem.Mol` to {self.name} must embed a conformer. '
+                f'It is recommended that {self.name} is used as a molecule feature '
+                'for `MolGraphFeaturizer3D`, which by default embeds a conformer.'
+            )
+        return super().__call__(mol)
+
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class MolWeight(Descriptor):
@@ -77,7 +93,7 @@ class NumHydrogenDonors(Descriptor):
 @keras.saving.register_keras_serializable(package='molcraft')
 class NumHydrogenAcceptors(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
-        return rdMolDescriptors.CalcNumHBA(mol) 
+        return rdMolDescriptors.CalcNumHBA(mol)
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -89,7 +105,7 @@ class NumRotatableBonds(Descriptor):
 @keras.saving.register_keras_serializable(package='molcraft')
 class NumRings(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
-        return rdMolDescriptors.CalcNumRings(mol) 
+        return rdMolDescriptors.CalcNumRings(mol)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -105,3 +121,18 @@ class AtomCount(Descriptor):
             if atom.GetSymbol() == self.atom_type:
                 count += 1
         return count
+    
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config['atom_type'] = self.atom_type
+        return config
+    
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class ForceFieldEnergy(Descriptor3D):
+    """Universal Force Field (UFF) Energy."""
+    def call(self, mol: chem.Mol) -> np.ndarray:
+        mol_copy = chem.Mol(mol)
+        mol_copy = chem.add_hs(mol_copy)
+        return chem.conformer_energies(mol_copy, method="UFF")
+        
