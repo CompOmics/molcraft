@@ -1,3 +1,4 @@
+import logging
 import warnings
 import collections
 import numpy as np
@@ -13,6 +14,9 @@ from rdkit.Chem import rdPartialCharges
 from rdkit.Chem import rdMolDescriptors
 from rdkit.Chem import rdForceFieldHelpers
 from rdkit.Chem import rdFingerprintGenerator
+
+
+logger = logging.getLogger(__name__)
 
 
 class Mol(Chem.Mol):

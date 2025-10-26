@@ -1,5 +1,9 @@
+import logging
 import keras 
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')

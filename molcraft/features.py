@@ -1,3 +1,4 @@
+import logging
 import abc
 import math
 import keras
@@ -5,6 +6,9 @@ import warnings
 import numpy as np
 
 from molcraft import chem
+
+
+logger = logging.getLogger(__name__)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')

@@ -1,3 +1,4 @@
+import logging
 import keras 
 import tensorflow as tf
 import warnings
@@ -6,6 +7,9 @@ from keras.src.models import functional
 
 from molcraft import tensors
 from molcraft import ops 
+
+
+logger = logging.getLogger(__name__)
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
