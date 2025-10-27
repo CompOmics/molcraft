@@ -1492,6 +1492,7 @@ class AddContext(GraphLayer):
         
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         feature_dim = spec.node['feature'].shape[-1]
+        self._has_super_node = 'super' in spec.node
         if self._intermediate_dim is None:
             self._intermediate_dim = feature_dim * 2
         self._intermediate_dense = self.get_dense(
@@ -1510,9 +1511,14 @@ class AddContext(GraphLayer):
         context = self._intermediate_dense(context)
         context = self._intermediate_norm(context)
         context = self._final_dense(context)
-        node_feature = ops.scatter_add(
-            tensor.node['feature'], tensor.node['super'], context
-        )
+        if self._has_super_node:
+            node_feature = ops.scatter_add(
+                tensor.node['feature'], tensor.node['super'], context
+            )
+        else:
+            node_feature = (
+                tensor.node['feature'] + ops.gather(context, tensor.graph_indicator)
+            )
         data = {'node': {'feature': node_feature}}
         if self._drop:
             data['context'] = {self._field: None}
