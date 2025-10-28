@@ -112,7 +112,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     def __new__(cls, *args, **kwargs):
         if _functional_init_arguments(args, kwargs) and cls == GraphModel:
             return FunctionalGraphModel(*args, **kwargs)
-        return typing.cast(GraphModel, super().__new__(cls))
+        return super().__new__(cls)
     
     def __init__(self, *args, **kwargs):
         self._model_layers = kwargs.pop('model_layers', None)
@@ -138,6 +138,8 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         """
         if not tensors.is_graph(graph_layers[0]):
             return cls(model_layers=graph_layers)
+        elif cls != GraphModel:
+            return cls(model_layers=graph_layers[1:])
         inputs: dict = graph_layers.pop(0)
         x = inputs
         for layer in graph_layers:
