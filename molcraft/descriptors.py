@@ -74,6 +74,12 @@ class MolarRefractivity(Descriptor):
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
+class NumAtoms(Descriptor):
+    def call(self, mol: chem.Mol) -> np.ndarray:
+        return rdMolDescriptors.CalcNumAtoms(mol)
+    
+
+@keras.saving.register_keras_serializable(package='molcraft')
 class NumHeavyAtoms(Descriptor):
     def call(self, mol: chem.Mol) -> np.ndarray:
         return rdMolDescriptors.CalcNumHeavyAtoms(mol)
@@ -110,6 +116,12 @@ class NumRings(Descriptor):
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
+class NumAromaticRings(Descriptor):
+    def call(self, mol: chem.Mol) -> np.ndarray:
+        return rdMolDescriptors.CalcNumAromaticRings(mol)
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
 class AtomCount(Descriptor):
 
     def __init__(self, atom_type: str, **kwargs):
@@ -133,7 +145,5 @@ class AtomCount(Descriptor):
 class ForceFieldEnergy(Descriptor3D):
     """Universal Force Field (UFF) Energy."""
     def call(self, mol: chem.Mol) -> np.ndarray:
-        mol_copy = chem.Mol(mol)
-        mol_copy = chem.add_hs(mol_copy)
-        return chem.conformer_energies(mol_copy, method="UFF")
+        return chem.conformer_energies(mol, method="UFF")
         
