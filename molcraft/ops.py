@@ -169,14 +169,15 @@ def gaussian(
 def euclidean_distance(
     x1: tf.Tensor, 
     x2: tf.Tensor, 
-    axis: int = -1
+    axis: int = -1,
+    keepdims: bool = True,
 ) -> tf.Tensor:
     relative_distance = keras.ops.subtract(x1, x2)
     return keras.ops.sqrt(
         keras.ops.sum(
             keras.ops.square(relative_distance), 
             axis=axis, 
-            keepdims=True
+            keepdims=keepdims
         )
     )
 
@@ -185,9 +186,10 @@ def displacement(
     x1: tf.Tensor,
     x2: tf.Tensor,
     normalize: bool = False,
-    axis=-1,
+    axis: int = -1,
+    keepdims: bool = True,
 ) -> tf.Tensor:
     displacement = keras.ops.subtract(x1, x2)
     if not normalize:
         return displacement
-    return displacement / euclidean_distance(x1, x2, axis=axis)
+    return displacement / euclidean_distance(x1, x2, axis=axis, keepdims=keepdims)

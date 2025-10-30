@@ -460,7 +460,8 @@ class GraphConv(GraphLayer):
             euclidean_distance = ops.euclidean_distance(
                 tensor.gather('coordinate', 'target'),
                 tensor.gather('coordinate', 'source'),
-                axis=-1
+                axis=-1,
+                keepdims=True
             )
             message = keras.ops.concatenate(
                 [
@@ -1021,7 +1022,8 @@ class GTConv(GraphConv):
             euclidean_distance = ops.euclidean_distance(
                 tensor.gather('coordinate', 'target'),
                 tensor.gather('coordinate', 'source'),
-                axis=-1
+                axis=-1,
+                keepdims=True
             )
             gaussian = ops.gaussian(
                 euclidean_distance, self._gaussian_loc, self._gaussian_scale
@@ -1053,7 +1055,9 @@ class GTConv(GraphConv):
             displacement = ops.displacement(
                 tensor.gather('coordinate', 'target'),
                 tensor.gather('coordinate', 'source'),
-                normalize=True
+                normalize=True,
+                axis=-1,
+                keepdims=True,
             )
             attention *= keras.ops.expand_dims(displacement, axis=-1)
             attention = keras.ops.expand_dims(attention, axis=2)
