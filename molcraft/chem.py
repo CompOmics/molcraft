@@ -26,6 +26,11 @@ class Mol(Chem.Mol):
         setattr(rdkit_mol, '_encoding', encoding)
         return rdkit_mol
 
+    @classmethod
+    def cast(cls, obj: Chem.Mol) -> 'Mol':
+        obj.__class__ = cls 
+        return obj
+
     @property
     def canonical_smiles(self) -> str:
         return Chem.MolToSmiles(self, canonical=True)
