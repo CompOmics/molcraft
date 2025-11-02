@@ -199,8 +199,12 @@ class Atom(Chem.Atom):
 
     @property
     def label(self):
-        return self.GetAtomMapNum() or None
+        return self.GetAtomMapNum()
 
+    @label.setter
+    def label(self, value: int) -> None:
+        self.SetAtomMapNum(value)
+    
     def __repr__(self) -> str:
         return f'<Atom {self.GetSymbol()} at {hex(id(self))}>'
 
