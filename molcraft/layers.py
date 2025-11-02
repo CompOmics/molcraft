@@ -1319,6 +1319,7 @@ class NodeEmbedding(GraphLayer):
         intermediate_activation: str | keras.layers.Activation | None = 'relu',
         normalize: bool = False,
         embed_context: bool = False,
+        num_wildcards: int | None = None,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -1329,6 +1330,7 @@ class NodeEmbedding(GraphLayer):
         )
         self._normalize = normalize
         self._embed_context = embed_context
+        self._num_wildcards = num_wildcards
 
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         feature_dim = spec.node['feature'].shape[-1]
@@ -1339,6 +1341,7 @@ class NodeEmbedding(GraphLayer):
         self._node_dense = self.get_dense(
             self._intermediate_dim, activation=self._intermediate_activation
         )
+        self._has_wildcard = 'wildcard' in spec.node
         self._has_super = 'super' in spec.node
         has_context_feature = 'feature' in spec.context
         if not has_context_feature:
@@ -1350,6 +1353,18 @@ class NodeEmbedding(GraphLayer):
         if self._embed_context:
             self._context_dense = self.get_dense(
                 self._intermediate_dim, activation=self._intermediate_activation
+            )
+        if self._has_wildcard:
+            if self._num_wildcards is None:
+                warnings.warn(
+                    "Found wildcards in input, but `num_wildcards` is set to `None`. "
+                    "Automatically setting `num_wildcards` to 1. Please specify `num_wildcards>1` "
+                    "if the layer should distinguish between different types of wildcards."
+                )
+                self._num_wildcards = 1
+            self._wildcard_features = self.get_weight(
+                shape=[self._num_wildcards, self._intermediate_dim], 
+                name='wildcard_node_features'
             )
         if not self._normalize:
             self._norm = keras.layers.Identity()
@@ -1372,6 +1387,16 @@ class NodeEmbedding(GraphLayer):
             feature = ops.scatter_update(feature, tensor.node['super'], context_feature)
             tensor = tensor.update({'context': {'feature': None}})
 
+        if self._has_wildcard:
+            wildcard = tensor.node['wildcard']
+            wildcard_indices = keras.ops.where(wildcard > 0)[0]
+            wildcard = ops.gather(wildcard, wildcard_indices)
+            wildcard_feature = ops.gather(
+                self._wildcard_features, keras.ops.mod(wildcard-1, self._num_wildcards)
+            )
+            wildcard_feature = self._intermediate_activation(wildcard_feature)
+            feature = ops.scatter_update(feature, wildcard_indices, wildcard_feature)
+
         feature = self._norm(feature)
         feature = self._dense(feature)
 
@@ -1387,6 +1412,7 @@ class NodeEmbedding(GraphLayer):
             ),
             'normalize': self._normalize,
             'embed_context': self._embed_context,
+            'num_wildcards': self._num_wildcards,
         })
         return config
     

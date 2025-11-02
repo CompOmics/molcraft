@@ -210,6 +210,18 @@ class MolGraphFeaturizer(GraphFeaturizer):
             [f(mol) for f in self._atom_features], axis=-1
         )
 
+        wildcard_labels = np.asarray([
+            (atom.label + 2 if atom.label else 1) if atom.symbol == "*" else 0
+            for atom in mol.atoms
+        ])
+        if np.any(wildcard_labels):
+            data['node']['wildcard'] = wildcard_labels
+            data['node']['feature'] = np.where(
+                wildcard_labels[:, None],
+                np.zeros_like(data['node']['feature']),
+                data['node']['feature']
+            )
+
         data['edge']['source'], data['edge']['target'] = mol.adjacency(
             fill='full', sparse=True, self_loops=self._self_loops
         )
@@ -395,6 +407,18 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         )
         data['node']['coordinate'] = conformer.coordinates
 
+        wildcard_labels = np.asarray([
+            (atom.label + 2 if atom.label else 1) if atom.symbol == "*" else 0
+            for atom in mol.atoms
+        ])
+        if np.any(wildcard_labels):
+            data['node']['wildcard'] = wildcard_labels
+            data['node']['feature'] = np.where(
+                wildcard_labels[:, None],
+                np.zeros_like(data['node']['feature']),
+                data['node']['feature']
+            )
+
         adjacency_matrix = conformer.adjacency(
             fill='full', radius=self._radius, sparse=False, self_loops=self._self_loops,
         )
@@ -500,6 +524,8 @@ def _add_super_node(
 
     data['node']['feature'] = np.pad(data['node']['feature'], [(0, 1), (0, 0)])
     data['node']['super'] = np.asarray([False] * num_nodes + [True])
+    if 'wildcard' in data['node']:
+        data['node']['wildcard'] = np.pad(data['node']['wildcard'], [(0, 1)])
 
     node_indices = list(range(num_nodes))
     super_node_indices = [super_node_index] * num_nodes

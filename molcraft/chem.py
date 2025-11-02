@@ -192,7 +192,15 @@ class Atom(Chem.Atom):
     @property
     def neighbors(self) -> list['Atom']:
         return [Atom.cast(neighbor) for neighbor in self.GetNeighbors()]
-    
+
+    @property
+    def symbol(self) -> str:
+        return self.GetSymbol()
+
+    @property
+    def label(self):
+        return self.GetAtomMapNum() or None
+
     def __repr__(self) -> str:
         return f'<Atom {self.GetSymbol()} at {hex(id(self))}>'
 

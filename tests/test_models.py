@@ -116,6 +116,24 @@ class TestModel(unittest.TestCase):
                     'feature': keras.ops.array([[1.], [2.], [3.], [4.], [5.], [6.], [7.]], dtype='float32')
                 }
             ),
+            # Graph with two subgraphs with wildcards
+            tensors.GraphTensor(
+                context={
+                    'size': keras.ops.array([2, 3], dtype='int32'),
+                    'label': keras.ops.array([1., 2.], dtype='float32'),
+                    'weight': keras.ops.array([0.5, 1.25], dtype='float32'),
+                },
+                node={
+                    'feature': keras.ops.array([[1., 2.], [3., 4.], [5., 6.], [6., 7.], [8., 9.]], dtype='float32'),
+                    'weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75], dtype='float32'),
+                    "wildcard": keras.ops.array([1, 2, 1, 0, 1]),
+                },
+                edge={
+                    'source': keras.ops.array([0, 1, 3, 4, 4, 3, 2], dtype='int32'),
+                    'target': keras.ops.array([1, 0, 2, 3, 4, 4, 3], dtype='int32'),
+                    'feature': keras.ops.array([[1.], [2.], [3.], [4.], [5.], [6.], [7.]], dtype='float32')
+                }
+            ),
         ]
 
     def test_functional_model(self):
