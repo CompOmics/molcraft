@@ -211,7 +211,7 @@ class MolGraphFeaturizer(GraphFeaturizer):
         )
 
         wildcard_labels = np.asarray([
-            (atom.label + 1) if atom.symbol == "*" else 0
+            (atom.label or 0) + 1 if atom.symbol == "*" else 0
             for atom in mol.atoms
         ])
         if np.any(wildcard_labels):
@@ -408,7 +408,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         data['node']['coordinate'] = conformer.coordinates
 
         wildcard_labels = np.asarray([
-            (atom.label + 1) if atom.symbol == "*" else 0
+            (atom.label or 0) + 1 if atom.symbol == "*" else 0
             for atom in mol.atoms
         ])
         if np.any(wildcard_labels):
