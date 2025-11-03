@@ -15,7 +15,10 @@ from rdkit.Chem import rdForceFieldHelpers
 from rdkit.Chem import rdFingerprintGenerator
 
 
-class Mol(Chem.Mol):
+RDKitMol = Chem.Mol
+
+
+class Mol(RDKitMol):
  
     @classmethod
     def from_encoding(cls, encoding: str, explicit_hs: bool = False, **kwargs) -> 'Mol':
@@ -27,7 +30,7 @@ class Mol(Chem.Mol):
         return rdkit_mol
 
     @classmethod
-    def cast(cls, obj: Chem.Mol) -> 'Mol':
+    def cast(cls, obj: RDKitMol) -> 'Mol':
         obj.__class__ = cls 
         return obj
 
@@ -230,8 +233,8 @@ def get_mol(
     encoding: str,
     strict: bool = True,
     assign_stereo_chemistry: bool = True,
-) -> Chem.Mol:
-    if isinstance(encoding, Chem.Mol):
+) -> RDKitMol:
+    if isinstance(encoding, RDKitMol):
         return encoding
     if encoding.startswith('InChI'):
         mol = Chem.MolFromInchi(encoding, sanitize=False)
@@ -244,7 +247,7 @@ def get_mol(
     raise ValueError(f'Could not obtain `chem.Mol` from {encoding}.')
 
 def get_adjacency_matrix(
-    mol: Chem.Mol,
+    mol: RDKitMol,
     fill: str = 'full',
     sparse: bool = False,
     self_loops: bool = False,
@@ -263,7 +266,7 @@ def get_adjacency_matrix(
     return edge_source.astype(dtype), edge_target.astype(dtype)
 
 def sanitize_mol(
-    mol: Chem.Mol,
+    mol: RDKitMol,
     strict: bool = True,
     assign_stereo_chemistry: bool = True,
 ) -> None:
@@ -543,7 +546,7 @@ def prune_conformers(
         warnings.warn(
             f'{mol} has no conformers to prune. Proceeding without it.'
         )
-        return Chem.Mol(mol)
+        return RDKitMol(mol)
     
     threshold = threshold or 0.0
     deviations = conformer_deviations(mol)
@@ -642,7 +645,7 @@ def _calc_mmff_energies(
 def unpack_conformers(mol: Mol) -> list[Mol]:
     mols = []
     for conf in mol.get_conformers():
-        new_mol = Chem.Mol(mol)
+        new_mol = RDKitMol(mol)
         new_mol.RemoveAllConformers()
         new_mol.AddConformer(conf, assignId=True)
         new_mol.__class__ = mol.__class__
@@ -675,7 +678,7 @@ def _get_fingerprint(
     return fp.astype(dtype)
 
 def _rdkit_fingerprint(
-    mol: Chem.Mol, 
+    mol: RDKitMol, 
     size: int = 2048, 
     *,
     min_path: int = 1, 
@@ -687,7 +690,7 @@ def _rdkit_fingerprint(
     return _get_fingerprint(mol, 'rdkit', binary, dtype, **fp_param)
 
 def _morgan_fingerprint(
-    mol: Chem.Mol, 
+    mol: RDKitMol, 
     size: int = 2048, 
     *,
     radius: int = 3, 
@@ -698,7 +701,7 @@ def _morgan_fingerprint(
     return _get_fingerprint(mol, 'morgan', binary, dtype, **fp_param)
 
 def _topological_torsion_fingerprint(
-    mol: Chem.Mol, 
+    mol: RDKitMol, 
     size: int = 2048, 
     *,
     binary: bool = True,
@@ -708,7 +711,7 @@ def _topological_torsion_fingerprint(
     return _get_fingerprint(mol, 'topological_torsion', binary, dtype, **fp_param)
 
 def _atom_pair_fingerprint(
-    mol: Chem.Mol, 
+    mol: RDKitMol, 
     size: int = 2048, 
     *,
     binary: bool = True,

@@ -46,8 +46,10 @@ def write(
             inputs = list(inputs)
 
         example = inputs[0]
-        if isinstance(example, (list, np.ndarray)):
+        if isinstance(example, list):
             example = tuple(example)
+        elif isinstance(example, np.ndarray):
+            example = tuple(example.tolist())
         example = featurizer(example)
         if not isinstance(example, tensors.GraphTensor):
             example = example[0]
@@ -157,8 +159,10 @@ def _write_tfrecord(
 
     with tf.io.TFRecordWriter(path) as writer:
         for i, x in enumerate(inputs):
-            if isinstance(x, (list, np.ndarray)):
+            if isinstance(x, list):
                 x = tuple(x)
+            elif isinstance(x, np.ndarray):
+                x = tuple(x.tolist())
             try:
                 tensor = featurizer(x)
                 _write_example(tensor)

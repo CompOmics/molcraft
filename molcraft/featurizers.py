@@ -182,14 +182,21 @@ class MolGraphFeaturizer(GraphFeaturizer):
         self._self_loops = self_loops
         self._super_node = super_node
 
-    def call(self, inputs: str | tuple) -> tensors.GraphTensor:
+    def call(self, inputs: str | chem.Mol | tuple) -> tensors.GraphTensor:
         
-        if isinstance(inputs, str):
+        if isinstance(inputs, (str, chem.Mol, chem.RDKitMol)):
             inputs = (inputs,)
 
         inputs, *context_inputs = inputs
 
-        mol = chem.Mol.from_encoding(inputs, explicit_hs=self._include_hydrogens)
+        if isinstance(inputs, str):
+            mol = chem.Mol.from_encoding(
+                inputs, explicit_hs=self._include_hydrogens
+            )
+        elif isinstance(inputs, chem.RDKitMol):
+            mol = chem.Mol.cast(inputs)
+        else:
+            mol = inputs
 
         data = {'context': {}, 'node': {}, 'edge': {}}
         
@@ -370,12 +377,17 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
 
     def call(self, inputs: str | tuple) -> tensors.GraphTensor:
 
-        if isinstance(inputs, str):
-            inputs = [inputs]
+        if isinstance(inputs, (str, chem.Mol, chem.RDKitMol)):
+            inputs = (inputs,)
 
         inputs, *context_inputs = inputs
 
-        mol = chem.Mol.from_encoding(inputs, explicit_hs=True)
+        if isinstance(inputs, str):
+            mol = chem.Mol.from_encoding(inputs, explicit_hs=True)
+        elif isinstance(inputs, chem.RDKitMol):
+            mol = chem.Mol.cast(inputs)
+        else:
+            mol = inputs
 
         if mol.num_conformers == 0:
             mol = chem.embed_conformers(
