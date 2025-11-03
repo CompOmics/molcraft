@@ -266,7 +266,8 @@ def sanitize_mol(
     mol: Chem.Mol,
     strict: bool = True,
     assign_stereo_chemistry: bool = True,
-) -> Chem.Mol:
+) -> None:
+    mol = Mol(mol)
     flag = Chem.SanitizeMol(mol, catchErrors=True)
     if flag != Chem.SanitizeFlags.SANITIZE_NONE:
         if strict:
