@@ -133,6 +133,9 @@ class MolGraphFeaturizer(GraphFeaturizer):
             A boolean specifying whether self loops exist.
         include_hydrogens:
             A boolean specifying whether hydrogens should be encoded as nodes.
+        wildcards:
+            A boolean specifying whether wildcards exist. If True, wildcard labels will
+            be encoded in the graph and separately embedded in `layers.NodeEmbedding`.
     """
 
     def __init__(
@@ -143,6 +146,7 @@ class MolGraphFeaturizer(GraphFeaturizer):
         super_node: bool = False,
         self_loops: bool = False,
         include_hydrogens: bool = False,
+        wildcards: bool = False,
     ) -> None:
         use_default_atom_features = (
             atom_features == 'auto' or atom_features == 'default'
@@ -179,6 +183,7 @@ class MolGraphFeaturizer(GraphFeaturizer):
         self._bond_features = bond_features
         self._molecule_features = molecule_features
         self._include_hydrogens = include_hydrogens
+        self._wildcards = wildcards
         self._self_loops = self_loops
         self._super_node = super_node
 
@@ -217,11 +222,11 @@ class MolGraphFeaturizer(GraphFeaturizer):
             [f(mol) for f in self._atom_features], axis=-1
         )
 
-        wildcard_labels = np.asarray([
-            (atom.label or 0) + 1 if atom.symbol == "*" else 0
-            for atom in mol.atoms
-        ])
-        if np.any(wildcard_labels):
+        if self._wildcards:
+            wildcard_labels = np.asarray([
+                (atom.label or 0) + 1 if atom.symbol == "*" else 0
+                for atom in mol.atoms
+            ])
             data['node']['wildcard'] = wildcard_labels
             data['node']['feature'] = np.where(
                 wildcard_labels[:, None],
@@ -267,6 +272,7 @@ class MolGraphFeaturizer(GraphFeaturizer):
             'super_node': self._super_node,
             'self_loops': self._self_loops,
             'include_hydrogens': self._include_hydrogens,
+            'wildcards': self._wildcards,
         })
         return config
 
@@ -337,6 +343,9 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
             A boolean specifying whether self loops exist.
         include_hydrogens:
             A boolean specifying whether hydrogens should be encoded as nodes.
+        wildcards:
+            A boolean specifying whether wildcards exist. If True, wildcard labels will
+            be encoded in the graph and separately embedded in `layers.NodeEmbedding`.
         radius:
             A floating point value specifying maximum edge length. 
         random_seed:
@@ -351,6 +360,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         super_node: bool = False,
         self_loops: bool = False,
         include_hydrogens: bool = False,
+        wildcards: bool = False,
         radius: int | float | None = 6.0,
         random_seed: int | None = None,
         **kwargs,
@@ -363,6 +373,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
             super_node=super_node,
             self_loops=self_loops,
             include_hydrogens=include_hydrogens,
+            wildcards=wildcards,
         )
 
         use_default_pair_features = (
@@ -419,11 +430,11 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         )
         data['node']['coordinate'] = conformer.coordinates
 
-        wildcard_labels = np.asarray([
-            (atom.label or 0) + 1 if atom.symbol == "*" else 0
-            for atom in mol.atoms
-        ])
-        if np.any(wildcard_labels):
+        if self._wildcards:
+            wildcard_labels = np.asarray([
+                (atom.label or 0) + 1 if atom.symbol == "*" else 0
+                for atom in mol.atoms
+            ])
             data['node']['wildcard'] = wildcard_labels
             data['node']['feature'] = np.where(
                 wildcard_labels[:, None],
