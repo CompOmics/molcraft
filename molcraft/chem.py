@@ -234,8 +234,10 @@ def get_mol(
     strict: bool = True,
     assign_stereo_chemistry: bool = True,
 ) -> RDKitMol:
-    if isinstance(encoding, RDKitMol):
-        return encoding
+    if not isinstance(encoding, str):
+        raise ValueError(
+            f'Input ({encoding}) is not a SMILES or InChI string.'
+        )
     if encoding.startswith('InChI'):
         mol = Chem.MolFromInchi(encoding, sanitize=False)
     else:
