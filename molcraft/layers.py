@@ -254,6 +254,26 @@ class GraphLayer(keras.layers.Layer):
         })
         return config
 
+    @property
+    def _symbolic_output(self) -> dict[dict[str, keras.KerasTensor]]:
+        output = self.output
+        if tensors.is_graph(output):
+            # GraphModel
+            return output
+        symbolic_input = self._symbolic_input
+        symbolic_output = self.compute_output_spec(symbolic_input)
+        return tf.nest.pack_sequence_as(symbolic_output, output)
+
+    @property
+    def _symbolic_input(self) -> dict[dict[str, keras.KerasTensor]]:
+        input = self.input
+        if tensors.is_graph(input):
+            # GraphModel or initial GraphLayer of GraphModel
+            return input
+        spec = _deserialize_spec(self.get_build_config()['spec'])
+        spec_dict = {k: dict(v) for k, v in spec.__dict__.items()}
+        return tf.nest.pack_sequence_as(spec_dict, input)
+
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class GraphConv(GraphLayer):
