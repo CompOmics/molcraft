@@ -488,9 +488,6 @@ def embed_conformers(
             )
     return mol
 
-
-import warnings 
-
 def optimize_conformers(
     mol: Mol,
     method: str = 'UFF',
