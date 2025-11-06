@@ -461,13 +461,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
 
 @keras.saving.register_keras_serializable(package="molcraft")
 class FunctionalGraphModel(functional.Functional, GraphModel):
-
-    @property
-    def layers(self):
-        return [
-            layer for layer in super().layers 
-            if not isinstance(layer, keras.layers.InputLayer)
-        ]
+    pass
 
 
 def save_model(model: GraphModel, filepath: str | Path, *args, **kwargs) -> None:
@@ -503,6 +497,8 @@ def interpret(
     features = []
     with tf.GradientTape(watch_accessed_variables=False) as tape:
         for layer in model.layers:
+            if isinstance(layer, keras.layers.InputLayer):
+                continue
             if isinstance(layer, layers.GraphNetwork):
                 x, taped_features = layer.tape_propagate(x, tape, training=False)
                 features.extend(taped_features)
