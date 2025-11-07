@@ -33,8 +33,8 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     ...         self.units = units
     ...         self.node_embedding = molcraft.layers.NodeEmbedding(self.units)
     ...         self.edge_embedding = molcraft.layers.EdgeEmbedding(self.units)
-    ...         self.conv_1 = molcraft.layers.GraphTransformer(self.units)
-    ...         self.conv_2 = molcraft.layers.GraphTransformer(self.units)
+    ...         self.conv_1 = molcraft.layers.GraphConv(self.units)
+    ...         self.conv_2 = molcraft.layers.GraphConv(self.units)
     ...         self.readout = molcraft.layers.Readout('mean')
     ...         self.dense = keras.layers.Dense(1)
     ...     def propagate(self, graph):
@@ -67,8 +67,8 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     >>> inputs = molcraft.layers.Input(graph.spec)
     >>> x = molcraft.layers.NodeEmbedding(128)(inputs)
     >>> x = molcraft.layers.EdgeEmbedding(128)(x)
-    >>> x = molcraft.layers.GraphTransformer(128)(x)
-    >>> x = molcraft.layers.GraphTransformer(128)(x)
+    >>> x = molcraft.layers.GraphConv(128)(x)
+    >>> x = molcraft.layers.GraphConv(128)(x)
     >>> x = molcraft.layers.Readout('mean')(x)
     >>> outputs = keras.layers.Dense(1)(x)
     >>> model = molcraft.models.GraphModel(inputs, outputs)
@@ -93,8 +93,8 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     ...     molcraft.layers.Input(graph.spec),
     ...     molcraft.layers.NodeEmbedding(128),
     ...     molcraft.layers.EdgeEmbedding(128),
-    ...     molcraft.layers.GraphTransformer(128),
-    ...     molcraft.layers.GraphTransformer(128),
+    ...     molcraft.layers.GraphConv(128),
+    ...     molcraft.layers.GraphConv(128),
     ...     molcraft.layers.Readout('mean'),
     ...     keras.layers.Dense(1)
     ... ])
