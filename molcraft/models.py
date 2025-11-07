@@ -296,7 +296,10 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         batch_size = kwargs.get('batch_size', 32)
         if isinstance(x, tensors.GraphTensor):
             x = _make_dataset(x, batch_size)
-        return super().predict(x, **kwargs)
+        output = super().predict(x, **kwargs)
+        if tensors.is_graph(output):
+            return tensors.from_dict(output).flatten()
+        return output
 
     def get_compile_config(self) -> dict | None:
         config = super().get_compile_config()
@@ -423,10 +426,9 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         return keras.models.Model(inputs, outputs, name=f'{self.name}_head')
 
     def train_step(self, tensor: tensors.GraphTensor) -> dict[str, float]:
-        y = tensor.context.get('label')
-        sample_weight = tensor.context.get('weight')
         with tf.GradientTape() as tape:
-            y_pred = self(tensor, training=True)
+            output = self(tensor, training=True)
+            y, y_pred, sample_weight = _get_loss_args(tensor, output)
             loss = self.compute_loss(tensor, y, y_pred, sample_weight)
             loss = self.optimizer.scale_loss(loss)
         trainable_weights = self.trainable_weights 
@@ -435,13 +437,15 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         return self.compute_metrics(tensor, y, y_pred, sample_weight)
     
     def test_step(self, tensor: tensors.GraphTensor) -> dict[str, float]:
-        y = tensor.context.get('label')
-        sample_weight = tensor.context.get('weight')
-        y_pred = self(tensor, training=False)
+        output = self(tensor, training=False)
+        y, y_pred, sample_weight = _get_loss_args(tensor, output)
         return self.compute_metrics(tensor, y, y_pred, sample_weight)
     
     def predict_step(self, tensor: tensors.GraphTensor) -> np.ndarray:
-        return self(tensor, training=False)
+        output = self(tensor, training=False)
+        if isinstance(output, tensors.GraphTensor):
+            output = tensors.to_dict(output.unflatten())
+        return output
 
     def compute_loss(self, x, y, y_pred, sample_weight=None):
         return super().compute_loss(x, y, y_pred, sample_weight)
@@ -567,3 +571,32 @@ def _make_dataset(x: tensors.GraphTensor, batch_size: int, shuffle: bool = False
     if shuffle:
         ds = ds.shuffle(buffer_size=ds.cardinality())
     return ds.batch(batch_size).prefetch(-1)
+
+def _get_loss_args(
+    inputs: tensors.GraphTensor,
+    outputs: tensors.GraphTensor | tf.Tensor,
+) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor | None]:
+    if not isinstance(outputs, tensors.GraphTensor):
+        tensor, prediction = inputs, outputs
+    else:
+        tensor, prediction = outputs, None
+    if 'label' in tensor.context:
+        data = tensor.context
+    elif 'label' in tensor.node:
+        data = tensor.node
+    elif 'label' in tensor.edge:
+        data = tensor.edge
+    else:
+        raise ValueError(
+            'Could not find a `label` in the `GraphTensor`. Make sure a '
+            '`label` exists in either the `context`, `node` or `edge`.'
+        )
+    prediction = (
+        prediction if prediction is not None else data.get('prediction')
+    )
+    if prediction is None:
+        raise ValueError(
+            'Could not find a `prediction` in the `GraphTensor`. Make sure a '
+            '`prediction` exists in either the `context`, `node` or `edge`.'
+        )
+    return data['label'], prediction, data.get('weight')
