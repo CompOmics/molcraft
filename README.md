@@ -10,12 +10,12 @@
 For CPU users:
 
 ```bash
-pip install --pre molcraft
+pip install molcraft
 ```
 
 For GPU users:
 ```bash
-pip install --pre molcraft[gpu]
+pip install molcraft[gpu]
 ```
 
 ## Examples 
