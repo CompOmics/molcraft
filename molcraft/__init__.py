@@ -1,4 +1,4 @@
-__version__ = '0.1.0a25'
+__version__ = '0.1.0b1'
 
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -15,3 +15,4 @@ from molcraft import tensors
 from molcraft import callbacks
 from molcraft import datasets
 from molcraft import losses
+from molcraft import pretrainers
