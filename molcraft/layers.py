@@ -144,8 +144,15 @@ class GraphLayer(keras.layers.Layer):
             # As a functional model is strict for what input can 
             # be passed to it, we need to temporarily pop some of the 
             # input and add it afterwards.
-            label = graph['context'].pop('label', None)
-            weight = graph['context'].pop('weight', None)
+            excluded = {}
+            for outer_field in ['context', 'node', 'edge']:
+                excluded[outer_field] = {}
+                for inner_field in ['label', 'weight']:
+                    if inner_field in graph[outer_field]:
+                        excluded[outer_field][inner_field] = (
+                            graph[outer_field].pop(inner_field)
+                        )
+                
             tf.nest.assert_same_structure(self.input, graph)
 
         outputs = super().__call__(graph, **kwargs)
@@ -155,10 +162,12 @@ class GraphLayer(keras.layers.Layer):
         
         graph = outputs
         if isinstance(self, functional.Functional):
-            if label is not None:
-                graph['context']['label'] = label 
-            if weight is not None:
-                graph['context']['weight'] = weight
+            for outer_field in ['context', 'node', 'edge']:
+                for inner_field in ['label', 'weight']:
+                    if inner_field in excluded[outer_field]:
+                        graph[outer_field][inner_field] = (
+                            excluded[outer_field].pop(inner_field)
+                        )
 
         if is_graph_tensor:
             return tensors.from_dict(graph)
@@ -1753,7 +1762,7 @@ class GaussianParams(keras.layers.Dense):
     
 
 def Input(spec: tensors.GraphTensor.Spec) -> dict:
-    """Used to specify inputs to model.
+    """Used to specify inputs to a functional model.
 
     Example:
 
@@ -1783,10 +1792,9 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
     for outer_field, data in spec.__dict__.items():
         inputs[outer_field] = {}
         for inner_field, nested_spec in data.items():
-            if outer_field == 'context' and inner_field in ['label', 'weight']:
-                # Remove context label and weight from the symbolic input 
-                # as a functional model is strict for what input can be passed.
-                # (We want to train and predict with the model.)
+            if inner_field in ['label', 'weight']:
+                # Remove label and weight from the symbolic input as a 
+                # functional model is strict for what input can be passed.
                 continue
             kwargs = {
                 'shape': nested_spec.shape[1:],
