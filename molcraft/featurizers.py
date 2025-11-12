@@ -211,7 +211,7 @@ class MolGraphFeaturizer(GraphFeaturizer):
             data['context']['label'] = np.asarray(context_inputs[0])
         elif len(context_inputs) == 2:
             data['context']['label'] = np.asarray(context_inputs[0])
-            data['context']['weight'] = np.asarray(context_inputs[1])
+            data['context']['sample_weight'] = np.asarray(context_inputs[1])
 
         if self._molecule_features is not None:
             data['context']['feature'] = np.concatenate(
@@ -416,7 +416,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
             data['context']['label'] = np.asarray(context_inputs[0])
         elif len(context_inputs) == 2:
             data['context']['label'] = np.asarray(context_inputs[0])
-            data['context']['weight'] = np.asarray(context_inputs[1])
+            data['context']['sample_weight'] = np.asarray(context_inputs[1])
 
         if self._molecule_features is not None:
             data['context']['feature'] = np.concatenate(

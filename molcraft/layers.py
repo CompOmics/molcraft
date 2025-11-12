@@ -147,7 +147,7 @@ class GraphLayer(keras.layers.Layer):
             excluded = {}
             for outer_field in ['context', 'node', 'edge']:
                 excluded[outer_field] = {}
-                for inner_field in ['label', 'weight']:
+                for inner_field in ['label', 'sample_weight']:
                     if inner_field in graph[outer_field]:
                         excluded[outer_field][inner_field] = (
                             graph[outer_field].pop(inner_field)
@@ -163,7 +163,7 @@ class GraphLayer(keras.layers.Layer):
         graph = outputs
         if isinstance(self, functional.Functional):
             for outer_field in ['context', 'node', 'edge']:
-                for inner_field in ['label', 'weight']:
+                for inner_field in ['label', 'sample_weight']:
                     if inner_field in excluded[outer_field]:
                         graph[outer_field][inner_field] = (
                             excluded[outer_field].pop(inner_field)
@@ -1792,9 +1792,9 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
     for outer_field, data in spec.__dict__.items():
         inputs[outer_field] = {}
         for inner_field, nested_spec in data.items():
-            if inner_field in ['label', 'weight']:
-                # Remove label and weight from the symbolic input as a 
-                # functional model is strict for what input can be passed.
+            if inner_field in ['label', 'sample_weight']:
+                # Remove label and sample_weight from the symbolic input as
+                # a functional model is strict for what input can be passed.
                 continue
             kwargs = {
                 'shape': nested_spec.shape[1:],
