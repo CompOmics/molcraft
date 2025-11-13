@@ -55,6 +55,7 @@ class NodePredictionTrainer(Trainer):
             Whether to mask the selected nodes. Only relevant if `select_rate` is specified.
         edge_masking_rate:
             The rate of which edges will be masked. If None, edges will not be masked.
+            Only relevant if `select_rate` is specified.
 
     Example:
 
@@ -142,14 +143,18 @@ class NodePredictionTrainer(Trainer):
             label_dim = spec.node['label'].shape[-1]
             self._decoder = keras.layers.Dense(units=label_dim) 
 
-    def propagate(self, tensor: tensors.GraphTensor):
+    def propagate(
+        self, 
+        tensor: tensors.GraphTensor,
+        training: bool | None = None,
+    ) -> tensors.GraphTensor:
         sample_weight = tensor.node.get('weight')
         if sample_weight is None:
             sample_weight = keras.ops.ones([tensor.num_nodes])
 
         tensor = self._embedder(tensor)
 
-        if self._select_rate is not None:
+        if self._select_rate is not None and training:
             # Select nodes to be predicted
             is_not_super = (
                 True if not self._has_super else keras.ops.logical_not(tensor.node['super'])
