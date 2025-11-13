@@ -2,6 +2,7 @@ import warnings
 import keras 
 import tensorflow as tf
 import functools
+import inspect
 from keras.src.models import functional
 
 from molcraft import tensors
@@ -69,6 +70,7 @@ class GraphLayer(keras.layers.Layer):
         self._kernel_constraint = keras.constraints.get(kernel_constraint)
         self._bias_constraint = keras.constraints.get(bias_constraint)
         self._custom_build_config = {}
+        self._propagate_kwargs = _propagate_kwargs(self.propagate)
         self.built = False
 
     def __init_subclass__(cls, **kwargs):
@@ -117,10 +119,14 @@ class GraphLayer(keras.layers.Layer):
 
     def call(
         self, 
-        graph: dict[str, dict[str, tf.Tensor]]
+        graph: dict[str, dict[str, tf.Tensor]],
+        training: bool | None = None,
     ) -> dict[str, dict[str, tf.Tensor]]:
         graph_tensor = tensors.from_dict(graph)
-        outputs = self.propagate(graph_tensor)
+        if not self._propagate_kwargs:
+            outputs = self.propagate(graph_tensor)
+        else:
+            outputs = self.propagate(graph_tensor, training=training)
         if isinstance(outputs, tensors.GraphTensor):
             return tensors.to_dict(outputs)
         return outputs
@@ -1852,3 +1858,9 @@ def _spec_from_inputs(inputs):
         return spec
     return tensors.GraphTensor.Spec(**nested_specs)
 
+def _propagate_kwargs(func) -> bool:
+    signature = inspect.signature(func)
+    return any(
+        (param.kind == inspect.Parameter.VAR_KEYWORD) or (param.name == 'training')
+        for param in signature.parameters.values()
+    )
