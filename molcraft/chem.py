@@ -271,7 +271,7 @@ def sanitize_mol(
     mol: RDKitMol,
     strict: bool = True,
     assign_stereo_chemistry: bool = True,
-) -> None:
+) -> Mol:
     mol = Mol(mol)
     flag = Chem.SanitizeMol(mol, catchErrors=True)
     if flag != Chem.SanitizeFlags.SANITIZE_NONE:
