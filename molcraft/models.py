@@ -576,10 +576,22 @@ def _get_loss_args(
     inputs: tensors.GraphTensor,
     outputs: tensors.GraphTensor | tf.Tensor,
 ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor | None]:
+    if (
+        not isinstance(inputs, tensors.GraphTensor) and
+        tensors.is_graph(inputs)
+    ):
+        inputs = tensors.from_dict(inputs)
+    if (
+        not isinstance(outputs, tensors.GraphTensor) and
+        tensors.is_graph(outputs)
+    ):
+        outputs = tensors.from_dict(outputs)
+
     if not isinstance(outputs, tensors.GraphTensor):
         tensor, prediction = inputs, outputs
     else:
         tensor, prediction = outputs, None
+
     if 'label' in tensor.context:
         data = tensor.context
     elif 'label' in tensor.node:
@@ -591,6 +603,7 @@ def _get_loss_args(
             'Could not find a `label` in the `GraphTensor`. Make sure a '
             '`label` exists in either the `context`, `node` or `edge`.'
         )
+
     prediction = (
         prediction if prediction is not None else data.get('prediction')
     )
