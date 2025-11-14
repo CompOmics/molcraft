@@ -78,7 +78,7 @@ def write(
         assert current_index == num_examples
         
         paths = [
-            os.path.join(path, f'tfrecord-{i:04d}.tfrecord')
+            os.path.join(path, f'tfrecord-{i:06d}.tfrecord')
             for i in range(num_files)
         ]
         
@@ -168,8 +168,8 @@ def _write_tfrecord(
                 _write_example(tensor)
             except Exception as e:
                 warnings.warn(
-                    f'Could not write record for index {i + start_index}, proceeding without it.'
-                    f'Exception raised:\n{e}'
+                    f'Could not write record for index {i + start_index}, '
+                    f'proceeding without it. Exception raised:\n{e}'
                 )
 
 def _serialize_example(
