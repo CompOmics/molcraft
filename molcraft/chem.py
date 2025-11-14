@@ -44,15 +44,11 @@ class Mol(RDKitMol):
         
     @property
     def bonds(self) -> list['Bond']:
-        if not hasattr(self, '_bonds'):
-            self._bonds = get_bonds(self) 
-        return self._bonds
+        return get_bonds(self)
     
     @property
     def atoms(self) -> list['Atom']:
-        if not hasattr(self, '_atoms'):
-            self._atoms = get_atoms(self)
-        return self._atoms
+        return get_atoms(self)
     
     @property
     def num_conformers(self) -> int:
@@ -104,13 +100,10 @@ class Mol(RDKitMol):
         sparse: bool = True, 
         self_loops: bool = False, 
         dtype: str= 'int32', 
-        cache: bool = True
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
-        if not hasattr(self, '_adjacency') or not cache:
-            self._adjacency = get_adjacency_matrix(
-                self, fill=fill, sparse=sparse, self_loops=self_loops, dtype=dtype
-            )
-        return self._adjacency
+        return get_adjacency_matrix(
+            self, fill=fill, sparse=sparse, self_loops=self_loops, dtype=dtype
+        )
 
     def get_conformer(self, index: int = 0) -> 'Conformer':
         if self.num_conformers == 0:
