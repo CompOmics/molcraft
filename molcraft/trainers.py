@@ -118,6 +118,12 @@ class NodePredictionTrainer(Trainer):
         self._decoder = decoder
         self._select_rate = select_rate
         self._mask_selected = mask_selected
+        if edge_masking_rate and not mask_selected:
+            warnings.warn(
+                'Setting `edge_masking_rate` to `None`, '
+                'as `mask_selected` is set to `False`.'
+            )
+            edge_masking_rate = None
         self._edge_masking_rate = edge_masking_rate
     
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
@@ -132,10 +138,10 @@ class NodePredictionTrainer(Trainer):
         if self._mask_selected and self._has_edge_feature and self._edge_masking_rate:
             edge_feature_dim = self._embedder._symbolic_output['edge']['feature'].shape[-1]
             self._edge_mask_feature = self.get_weight(shape=[edge_feature_dim])
-        else:
+        elif self._edge_masking_rate and not self._has_edge_feature:
             warnings.warn(
-                '`edge_masking_rate` specified, but found no edge features. '
-                'Proceeding without edge masking.'
+                'Setting `edge_masking_rate` to `None`, '
+                'as no edge features exist.'
             )
             self._edge_masking_rate = None
 
