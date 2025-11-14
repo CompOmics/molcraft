@@ -153,7 +153,7 @@ class NodePredictionTrainer(Trainer):
         tensor: tensors.GraphTensor,
         training: bool | None = None,
     ) -> tensors.GraphTensor:
-        sample_weight = tensor.node.get('weight')
+        sample_weight = tensor.node.get('sample_weight')
         if sample_weight is None:
             sample_weight = keras.ops.ones([tensor.num_nodes])
 
