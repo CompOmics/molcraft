@@ -1,5 +1,4 @@
 import keras
-import typing
 import warnings
 
 from molcraft import layers
@@ -29,7 +28,7 @@ class Trainer(models.GraphModel):
         return config
     
     @classmethod
-    def from_config(cls, config: dict) -> typing.Self:
+    def from_config(cls, config: dict) -> 'Trainer':
         config['model'] = keras.saving.deserialize_keras_object(config['model'])
         return super().from_config(config)
     
@@ -208,6 +207,6 @@ class NodePredictionTrainer(Trainer):
         return config
     
     @classmethod
-    def from_config(cls, config: dict) -> typing.Self:
+    def from_config(cls, config: dict) -> 'NodePredictionTrainer':
         config['decoder'] = keras.saving.deserialize_keras_object(config['decoder'])
         return super().from_config(config)
