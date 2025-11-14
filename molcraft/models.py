@@ -443,7 +443,9 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     
     def predict_step(self, tensor: tensors.GraphTensor) -> np.ndarray:
         output = self(tensor, training=False)
-        if isinstance(output, tensors.GraphTensor):
+        if tensors.is_graph(output):
+            if not isinstance(output, tensors.GraphTensor):
+                output = tensors.from_dict(output)
             output = tensors.to_dict(output.unflatten())
         return output
 
