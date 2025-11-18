@@ -192,16 +192,14 @@ class MolGraphFeaturizer(GraphFeaturizer):
         if isinstance(inputs, (str, chem.Mol, chem.RDKitMol)):
             inputs = (inputs,)
 
-        inputs, *context_inputs = inputs
+        mol, *context_inputs = inputs
 
-        if isinstance(inputs, str):
+        if isinstance(mol, str):
             mol = chem.Mol.from_encoding(
-                inputs, explicit_hs=self._include_hydrogens
+                mol, explicit_hs=self._include_hydrogens
             )
-        elif isinstance(inputs, chem.RDKitMol):
-            mol = chem.Mol.cast(inputs)
-        else:
-            mol = inputs
+        elif isinstance(mol, chem.RDKitMol):
+            mol = chem.Mol.cast(mol)
 
         data = {'context': {}, 'node': {}, 'edge': {}}
         
@@ -391,14 +389,14 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         if isinstance(inputs, (str, chem.Mol, chem.RDKitMol)):
             inputs = (inputs,)
 
-        inputs, *context_inputs = inputs
+        mol, *context_inputs = inputs
 
-        if isinstance(inputs, str):
-            mol = chem.Mol.from_encoding(inputs, explicit_hs=True)
-        elif isinstance(inputs, chem.RDKitMol):
-            mol = chem.Mol.cast(inputs)
-        else:
-            mol = inputs
+        if isinstance(mol, str):
+            mol = chem.Mol.from_encoding(
+                mol, explicit_hs=self._include_hydrogens
+            )
+        elif isinstance(mol, chem.RDKitMol):
+            mol = chem.Mol.cast(mol)
 
         if mol.num_conformers == 0:
             mol = chem.embed_conformers(
