@@ -393,7 +393,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
 
         if isinstance(mol, str):
             mol = chem.Mol.from_encoding(
-                mol, explicit_hs=self._include_hydrogens
+                mol, explicit_hs=True
             )
         elif isinstance(mol, chem.RDKitMol):
             mol = chem.Mol.cast(mol)
