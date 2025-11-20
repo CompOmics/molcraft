@@ -338,6 +338,12 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
                 )
         return self.__class__(**values)
     
+    def with_context(self, *args, **kwargs):
+        context = (
+            args[0] if len(args) and isinstance(args[0], dict) else kwargs
+        )
+        return self.update({'context': context})
+
     def __getitem__(self, index):
         if index is None and is_scalar(self):
             return self.__class__(
