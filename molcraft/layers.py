@@ -1545,6 +1545,7 @@ class AddContext(GraphLayer):
         drop: bool = False,
         normalize: bool = False,
         optional: bool = False,
+        input_dim: int | None = None,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -1555,6 +1556,14 @@ class AddContext(GraphLayer):
             intermediate_activation
         )
         self._normalize = normalize
+        self._input_dim = input_dim
+        if optional and not input_dim:
+            warnings.warn(
+                'Found `optional` to be `True`, but `input_dim` to be `None`. '
+                'For optional context, please provide the input dimension. '
+                'Automatically setting `optional` to `False`.'
+            )
+            optional = False
         self._optional = optional
         
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
@@ -1574,12 +1583,19 @@ class AddContext(GraphLayer):
             self._intermediate_norm = keras.layers.BatchNormalization()
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        if self._optional and (self._field not in tensor.context):
-            return tensor 
-        context = tensor.context[self._field]
+        has_context = (self._field in tensor.context)
+        if self._optional and not has_context:
+            context = keras.ops.zeros(
+                shape=(tensor.num_subgraphs, self._input_dim),
+                dtype=tensor.node['feature'].dtype
+            )
+        else:
+            context = tensor.context[self._field]
         context = self._intermediate_dense(context)
         context = self._intermediate_norm(context)
         context = self._final_dense(context)
+        if not has_context:
+            context *= 0.0
         if self._has_super_node:
             node_feature = ops.scatter_add(
                 tensor.node['feature'], tensor.node['super'], context
@@ -1604,6 +1620,7 @@ class AddContext(GraphLayer):
             'drop': self._drop,
             'normalize': self._normalize,
             'optional': self._optional,
+            'input_dim': self._input_dim,
         })
         return config
 
