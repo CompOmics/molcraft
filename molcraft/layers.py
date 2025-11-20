@@ -1544,6 +1544,7 @@ class AddContext(GraphLayer):
         intermediate_activation: str | keras.layers.Activation | None = 'relu',
         drop: bool = False,
         normalize: bool = False,
+        optional: bool = False,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -1554,6 +1555,7 @@ class AddContext(GraphLayer):
             intermediate_activation
         )
         self._normalize = normalize
+        self._optional = optional
         
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         feature_dim = spec.node['feature'].shape[-1]
@@ -1572,6 +1574,8 @@ class AddContext(GraphLayer):
             self._intermediate_norm = keras.layers.BatchNormalization()
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        if self._optional and (self._field not in tensor.context):
+            return tensor 
         context = tensor.context[self._field]
         context = self._intermediate_dense(context)
         context = self._intermediate_norm(context)
@@ -1599,6 +1603,7 @@ class AddContext(GraphLayer):
             ),
             'drop': self._drop,
             'normalize': self._normalize,
+            'optional': self._optional,
         })
         return config
 
