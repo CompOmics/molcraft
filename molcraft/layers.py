@@ -1534,7 +1534,7 @@ class AddContext(GraphLayer):
 
     """Context adding layer.
 
-    Adds context to super nodes.
+    Adds context to super nodes or nodes, depending on whether super nodes exist.
     """
 
     def __init__(
