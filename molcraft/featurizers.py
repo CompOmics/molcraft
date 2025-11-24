@@ -1,4 +1,6 @@
 import warnings
+import collections
+import functools
 import keras 
 import json
 import abc
@@ -24,7 +26,7 @@ class GraphFeaturizer(abc.ABC):
     """
 
     @abc.abstractmethod
-    def call(self, x: str | chem.Mol | tuple) -> tensors.GraphTensor:
+    def featurize(self, x: typing.Any, context: dict) -> tensors.GraphTensor:
         pass
 
     def get_config(self) -> dict:
@@ -41,7 +43,7 @@ class GraphFeaturizer(abc.ABC):
     def load(filepath: str | Path, *args, **kwargs) -> 'GraphFeaturizer':
         return load_featurizer(filepath, *args, **kwargs)
     
-    def write_records(self, inputs: str | chem.Mol | tuple, path: str | Path, **kwargs) -> None:
+    def write_records(self, inputs: typing.Iterable, path: str | Path, **kwargs) -> None:
          records.write(
             inputs, featurizer=self, path=path, **kwargs
          )
@@ -51,21 +53,32 @@ class GraphFeaturizer(abc.ABC):
         return records.read(
             path=path, **kwargs
         )
-        
+
+    def call(self, inputs: typing.Any) -> tensors.GraphTensor:
+        inputs, context = _unpack_inputs(inputs)
+        graph = self.featurize(inputs, context)
+        if not isinstance(graph, tensors.GraphTensor):
+            graph = tensors.from_dict(graph)
+        return graph
+
     def __call__(
         self,
-        inputs: str | chem.Mol | tuple | typing.Iterable,
+        inputs: typing.Iterable,
         *,
         multiprocessing: bool = False,
         processes: int | None = None,
         device: str = '/cpu:0',
     ) -> tensors.GraphTensor:
-        if isinstance(inputs, (str, tuple)):
+        if not isinstance(
+            inputs, (list, np.ndarray, pd.Series, pd.DataFrame, typing.Generator)
+        ):
             return self.call(inputs)
-        if isinstance(inputs, (pd.DataFrame, pd.Series)):
-            inputs = inputs.values.tolist()
-        elif isinstance(inputs, np.ndarray):
+        
+        if isinstance(inputs, (np.ndarray, pd.Series)):
             inputs = inputs.tolist()
+        elif isinstance(inputs, pd.DataFrame):
+            inputs = inputs.itertuples(index=True, name='Example')
+
         if not multiprocessing:
             outputs = [self.call(x) for x in inputs]
         else:
@@ -187,12 +200,11 @@ class MolGraphFeaturizer(GraphFeaturizer):
         self._self_loops = self_loops
         self._super_node = super_node
 
-    def call(self, inputs: str | chem.Mol | tuple) -> tensors.GraphTensor:
-        
-        if isinstance(inputs, (str, chem.Mol, chem.RDKitMol)):
-            inputs = (inputs,)
-
-        mol, *context_inputs = inputs
+    def featurize(
+        self, 
+        mol: str | chem.Mol | tuple, 
+        context: dict | None = None
+    ) -> tensors.GraphTensor:
 
         if isinstance(mol, str):
             mol = chem.Mol.from_encoding(
@@ -205,16 +217,13 @@ class MolGraphFeaturizer(GraphFeaturizer):
         
         data['context']['size'] = np.asarray(mol.num_atoms)
 
-        if len(context_inputs) == 1:
-            data['context']['label'] = np.asarray(context_inputs[0])
-        elif len(context_inputs) == 2:
-            data['context']['label'] = np.asarray(context_inputs[0])
-            data['context']['sample_weight'] = np.asarray(context_inputs[1])
-
         if self._molecule_features is not None:
             data['context']['feature'] = np.concatenate(
                 [f(mol) for f in self._molecule_features], axis=-1
             )
+
+        if context:
+            data['context'].update(context)
 
         data['node']['feature'] = np.concatenate(
             [f(mol) for f in self._atom_features], axis=-1
@@ -384,12 +393,11 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         self._radius = float(radius) if radius else None
         self._random_seed = random_seed
 
-    def call(self, inputs: str | tuple) -> tensors.GraphTensor:
-
-        if isinstance(inputs, (str, chem.Mol, chem.RDKitMol)):
-            inputs = (inputs,)
-
-        mol, *context_inputs = inputs
+    def featurize(
+        self, 
+        mol: str | chem.Mol | tuple, 
+        context: dict | None = None
+    ) -> tensors.GraphTensor:
 
         if isinstance(mol, str):
             mol = chem.Mol.from_encoding(
@@ -410,16 +418,13 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
 
         data['context']['size'] = np.asarray(mol.num_atoms)
 
-        if len(context_inputs) == 1:
-            data['context']['label'] = np.asarray(context_inputs[0])
-        elif len(context_inputs) == 2:
-            data['context']['label'] = np.asarray(context_inputs[0])
-            data['context']['sample_weight'] = np.asarray(context_inputs[1])
-
         if self._molecule_features is not None:
             data['context']['feature'] = np.concatenate(
                 [f(mol) for f in self._molecule_features], axis=-1
             )
+
+        if context:
+            data['context'].update(context)
 
         conformer = mol.get_conformer()
 
@@ -581,3 +586,31 @@ def _convert_dtypes(data: dict[str, dict[str, np.ndarray]]) -> np.ndarray:
             elif np.issubdtype(inner_value.dtype, np.floating):
                 data[outer_key][inner_key] = inner_value.astype(np.float32)
     return data
+
+def _unpack_inputs(inputs) -> tuple:
+
+    if isinstance(inputs, pd.Series):
+        namedtuple = collections.namedtuple(
+            'Example', ['Index'] + list(inputs.index)
+        )
+        inputs = namedtuple(**{**{'Index': inputs.name}, **inputs.to_dict()})
+    elif isinstance(inputs, np.ndarray):
+        inputs = tuple(inputs.tolist())
+    elif isinstance(inputs, list):
+        inputs = tuple(inputs)
+
+    if not isinstance(inputs, tuple):
+        mol, context = inputs, {}
+    elif not hasattr(inputs, 'Index'):
+        mol, *context = inputs
+        context = dict(zip(['label', 'sample_weight'], map(np.asarray, context)))
+    else:
+        index, mol, *context = inputs 
+        context = dict(
+            zip(map(_snake_case, inputs._fields[2:]), map(np.asarray, context))
+        )
+        context['index'] = np.asarray(index)
+    return mol, context
+    
+def _snake_case(x: str) -> str:
+    return '_'.join(x.lower().split())
