@@ -147,18 +147,19 @@ class GraphLayer(keras.layers.Layer):
             graph = {field: dict(data) for (field, data) in graph.items()}
 
         if isinstance(self, functional.Functional):
-            # As a functional model is strict for what input can 
-            # be passed to it, we need to temporarily pop some of the 
-            # input and add it afterwards.
+            # As a functional model is strict for what input can be 
+            # passed to it, we need to temporarily pop some of the 
+            # input and add it back afterwards.
+            symbolic_input = self._symbolic_input
             excluded = {}
             for outer_field in ['context', 'node', 'edge']:
                 excluded[outer_field] = {}
-                for inner_field in ['label', 'sample_weight']:
-                    if inner_field in graph[outer_field]:
+                for inner_field in list(graph[outer_field]):
+                    if inner_field not in symbolic_input[outer_field]:
                         excluded[outer_field][inner_field] = (
                             graph[outer_field].pop(inner_field)
                         )
-                
+            
             tf.nest.assert_same_structure(self.input, graph)
 
         outputs = super().__call__(graph, **kwargs)
@@ -169,11 +170,10 @@ class GraphLayer(keras.layers.Layer):
         graph = outputs
         if isinstance(self, functional.Functional):
             for outer_field in ['context', 'node', 'edge']:
-                for inner_field in ['label', 'sample_weight']:
-                    if inner_field in excluded[outer_field]:
-                        graph[outer_field][inner_field] = (
-                            excluded[outer_field].pop(inner_field)
-                        )
+                for inner_field in list(excluded[outer_field]):
+                    graph[outer_field][inner_field] = (
+                        excluded[outer_field].pop(inner_field)
+                    )
 
         if is_graph_tensor:
             return tensors.from_dict(graph)
@@ -1544,8 +1544,7 @@ class AddContext(GraphLayer):
         intermediate_activation: str | keras.layers.Activation | None = 'relu',
         drop: bool = False,
         normalize: bool = False,
-        optional: bool = False,
-        input_dim: int | None = None,
+        num_categories: int | None = None,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -1556,17 +1555,21 @@ class AddContext(GraphLayer):
             intermediate_activation
         )
         self._normalize = normalize
-        self._input_dim = input_dim
-        if optional and not input_dim:
-            warnings.warn(
-                'Found `optional` to be `True`, but `input_dim` to be `None`. '
-                'For optional context, please provide the input dimension. '
-                'Automatically setting `optional` to `False`.'
-            )
-            optional = False
-        self._optional = optional
+        self._num_categories = num_categories
         
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
+        is_categorical = spec.context[self._field].dtype.is_integer
+        if is_categorical and not self._num_categories:
+            raise ValueError(
+                f'Found context ({self._field}) to be categorical (`int` dtype), but `num_categories`'
+                'to be `None`. Please specify `num_categories` for categorical context.'
+            )
+        elif not is_categorical and self._num_categories:
+            warnings.warn(
+                f'`num_categories` is set to {self._num_categories}, but found context to be '
+                'continuous (`float` dtype). Layer will cast context from `float` to `int` '
+                'before one-hot encoding it.'
+            )
         feature_dim = spec.node['feature'].shape[-1]
         self._has_super_node = 'super' in spec.node
         if self._intermediate_dim is None:
@@ -1583,19 +1586,14 @@ class AddContext(GraphLayer):
             self._intermediate_norm = keras.layers.BatchNormalization()
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
-        has_context = (self._field in tensor.context)
-        if self._optional and not has_context:
-            context = keras.ops.zeros(
-                shape=(tensor.num_subgraphs, self._input_dim),
-                dtype=tensor.node['feature'].dtype
-            )
-        else:
-            context = tensor.context[self._field]
+        context = tensor.context[self._field]
+        if self._num_categories:
+            if context.dtype.is_floating:
+                context = keras.ops.cast(context, dtype=tensor.edge['source'].dtype)
+            context = keras.utils.to_categorical(context, self._num_categories)
         context = self._intermediate_dense(context)
         context = self._intermediate_norm(context)
         context = self._final_dense(context)
-        if not has_context:
-            context *= 0.0
         if self._has_super_node:
             node_feature = ops.scatter_add(
                 tensor.node['feature'], tensor.node['super'], context
@@ -1619,8 +1617,7 @@ class AddContext(GraphLayer):
             ),
             'drop': self._drop,
             'normalize': self._normalize,
-            'optional': self._optional,
-            'input_dim': self._input_dim,
+            'num_categories': self._num_categories,
         })
         return config
 
@@ -1846,6 +1843,8 @@ def _serialize_spec(spec: tensors.GraphTensor.Spec) -> dict:
     for outer_field, data in spec.__dict__.items():
         serialized_spec[outer_field] = {}
         for inner_field, inner_spec in data.items():
+            if inner_field in ['label', 'sample_weight']:
+                continue
             serialized_spec[outer_field][inner_field] = {
                 'shape': inner_spec.shape.as_list(), 
                 'dtype': inner_spec.dtype.name, 
