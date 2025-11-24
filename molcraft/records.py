@@ -38,22 +38,11 @@ def write(
         os.makedirs(path)
 
     with tf.device(device):
-
-        if isinstance(inputs, (pd.DataFrame, pd.Series)):
-            inputs = inputs.values
         
-        if not isinstance(inputs, list):
-            inputs = list(inputs)
+        if isinstance(inputs, (pd.DataFrame, pd.Series)):
+            inputs = list(inputs.itertuples(index=True, name='Example'))
 
-        example = inputs[0]
-        if isinstance(example, list):
-            example = tuple(example)
-        elif isinstance(example, np.ndarray):
-            example = tuple(example.tolist())
-        example = featurizer(example)
-        if not isinstance(example, tensors.GraphTensor):
-            example = example[0]
-
+        example = featurizer.call(inputs[0])
         save_spec(os.path.join(path, 'spec.pb'), example.spec)
 
         if num_processes is None:
@@ -144,41 +133,37 @@ def load_spec(path: str) -> tensors.GraphTensor.Spec:
     return spec
     
 def _write_tfrecord(
-    inputs: list[str, tuple], 
+    inputs: list, 
     path: str,
     featurizer: 'featurizers.GraphFeaturizer', 
     start_index: int,
 ) -> None:
-    
-    def _write_example(tensor):
-        flat_values = tf.nest.flatten(tensor, expand_composites=True)
-        flat_values = [tf.io.serialize_tensor(value).numpy() for value in flat_values]
-        feature = tf.train.Feature(bytes_list=tf.train.BytesList(value=flat_values))
-        serialized_feature = _serialize_example({'feature': feature})
-        writer.write(serialized_feature)
-
     with tf.io.TFRecordWriter(path) as writer:
         for i, x in enumerate(inputs):
-            if isinstance(x, list):
-                x = tuple(x)
-            elif isinstance(x, np.ndarray):
-                x = tuple(x.tolist())
             try:
-                tensor = featurizer(x)
-                _write_example(tensor)
+                tensor = featurizer.call(x)
+                serialized = _serialize_example(tensor)
+                writer.write(serialized)
             except Exception as e:
+                index = getattr(x, 'Index', (i + start_index))
                 warnings.warn(
-                    f'Could not write record for index {i + start_index}, '
+                    f'Could not write record for index {index}, '
                     f'proceeding without it. Exception raised:\n{e}'
                 )
 
-def _serialize_example(
-    feature: dict[str, tf.train.Feature]
-) -> bytes:
+def _serialize_example(tensor):
+    flat_values = tf.nest.flatten(tensor, expand_composites=True)
+    flat_values = [
+        tf.io.serialize_tensor(value).numpy() for value in flat_values
+    ]
+    feature = tf.train.Feature(
+        bytes_list=tf.train.BytesList(value=flat_values)
+    )
     example_proto = tf.train.Example(
-        features=tf.train.Features(feature=feature))
+        features=tf.train.Features(feature={'feature': feature})
+    )
     return example_proto.SerializeToString()
-
+    
 def _parse_example(
     x: tf.Tensor, 
     spec: tensors.GraphTensor.Spec
