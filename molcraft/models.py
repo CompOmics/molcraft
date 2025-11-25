@@ -311,7 +311,8 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         config = super().get_compile_config()
         if config is None:
             return
-        config['use_layer_optimizers'] = self._use_layer_optimizers
+        if hasattr(self, '_use_layer_optimizers'):
+            config['use_layer_optimizers'] = self._use_layer_optimizers
         return config
 
     def compile_from_config(self, config: dict | None) -> None:
