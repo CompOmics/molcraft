@@ -293,10 +293,13 @@ class GraphLayer(keras.layers.Layer):
     def output_spec(self) -> tensors.GraphTensor.Spec | tf.TensorSpec:
         if not self.built:
             return None
-        serialized_spec = self.get_build_config()['spec']
-        deserialized_spec = _deserialize_spec(serialized_spec)
-        input_spec = Input(deserialized_spec)
-        output_spec = self.compute_output_spec(input_spec)
+        if isinstance(self, functional.Functional):
+            output_spec = self.output
+        else:
+            serialized_spec = self.get_build_config()['spec']
+            deserialized_spec = _deserialize_spec(serialized_spec)
+            input_spec = Input(deserialized_spec)
+            output_spec = self.compute_output_spec(input_spec)
         if not tensors.is_graph(output_spec):
             return tf.TensorSpec(output_spec.shape, output_spec.dtype)
         spec_dict = tf.nest.map_structure(
