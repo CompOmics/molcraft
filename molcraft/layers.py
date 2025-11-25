@@ -1827,7 +1827,10 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
                 'name': f'{outer_field}_{inner_field}'
             }
             if isinstance(nested_spec, tf.RaggedTensorSpec):
-                kwargs['ragged'] = True
+                # kwargs['ragged'] = True
+                raise ValueError(
+                    'Graph layers only supports graph input with nested `tf.Tensor` values.'
+                )
             try:
                 inputs[outer_field][inner_field] = keras.Input(**kwargs)
             except TypeError:
