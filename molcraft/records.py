@@ -42,7 +42,7 @@ def write(
         if isinstance(inputs, (pd.DataFrame, pd.Series)):
             inputs = list(inputs.itertuples(index=True, name='Example'))
 
-        example = featurizer.call(inputs[0])
+        example = featurizer._call(inputs[0])
         save_spec(os.path.join(path, 'spec.pb'), example.spec)
 
         if num_processes is None:
@@ -141,7 +141,7 @@ def _write_tfrecord(
     with tf.io.TFRecordWriter(path) as writer:
         for i, x in enumerate(inputs):
             try:
-                tensor = featurizer.call(x)
+                tensor = featurizer._call(x)
                 serialized = _serialize_example(tensor)
                 writer.write(serialized)
             except Exception as e:
