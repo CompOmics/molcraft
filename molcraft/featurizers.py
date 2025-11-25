@@ -1,6 +1,7 @@
 import warnings
 import collections
 import functools
+import inspect
 import keras 
 import json
 import abc
@@ -26,7 +27,7 @@ class GraphFeaturizer(abc.ABC):
     """
 
     @abc.abstractmethod
-    def featurize(self, x: typing.Any, context: dict) -> tensors.GraphTensor:
+    def call(self, x: typing.Any, context: dict) -> tensors.GraphTensor:
         pass
 
     def get_config(self) -> dict:
@@ -54,9 +55,12 @@ class GraphFeaturizer(abc.ABC):
             path=path, **kwargs
         )
 
-    def call(self, inputs: typing.Any) -> tensors.GraphTensor:
-        inputs, context = _unpack_inputs(inputs)
-        graph = self.featurize(inputs, context)
+    def _call(self, inputs: typing.Any) -> tensors.GraphTensor:
+        if _call_kwargs(self.call):
+            inputs, context = _unpack_inputs(inputs)
+            graph = self.call(inputs, context=context)
+        else:
+            graph = self.call(inputs)
         if not isinstance(graph, tensors.GraphTensor):
             graph = tensors.from_dict(graph)
         return graph
@@ -72,7 +76,7 @@ class GraphFeaturizer(abc.ABC):
         if not isinstance(
             inputs, (list, np.ndarray, pd.Series, pd.DataFrame, typing.Generator)
         ):
-            return self.call(inputs)
+            return self._call(inputs)
         
         if isinstance(inputs, (np.ndarray, pd.Series)):
             inputs = inputs.tolist()
@@ -80,11 +84,11 @@ class GraphFeaturizer(abc.ABC):
             inputs = inputs.itertuples(index=True, name='Example')
 
         if not multiprocessing:
-            outputs = [self.call(x) for x in inputs]
+            outputs = [self._call(x) for x in inputs]
         else:
             with tf.device(device):
                 with mp.Pool(processes) as pool:
-                    outputs = pool.map(func=self.call, iterable=inputs)
+                    outputs = pool.map(func=self._call, iterable=inputs)
         outputs = [x for x in outputs if x is not None]
         if tensors.is_scalar(outputs[0]):
             return tf.stack(outputs, axis=0)
@@ -200,7 +204,7 @@ class MolGraphFeaturizer(GraphFeaturizer):
         self._self_loops = self_loops
         self._super_node = super_node
 
-    def featurize(
+    def call(
         self, 
         mol: str | chem.Mol | tuple, 
         context: dict | None = None
@@ -393,7 +397,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         self._radius = float(radius) if radius else None
         self._random_seed = random_seed
 
-    def featurize(
+    def call(
         self, 
         mol: str | chem.Mol | tuple, 
         context: dict | None = None
@@ -614,3 +618,10 @@ def _unpack_inputs(inputs) -> tuple:
     
 def _snake_case(x: str) -> str:
     return '_'.join(x.lower().split())
+
+def _call_kwargs(func) -> bool:
+    signature = inspect.signature(func)
+    return any(
+        (param.kind == inspect.Parameter.VAR_KEYWORD) or (param.name == 'context')
+        for param in signature.parameters.values()
+    )
