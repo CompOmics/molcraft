@@ -289,6 +289,21 @@ class GraphLayer(keras.layers.Layer):
         spec_dict = {k: dict(v) for k, v in spec.__dict__.items()}
         return tf.nest.pack_sequence_as(spec_dict, input)
 
+    @property
+    def output_spec(self) -> tensors.GraphTensor.Spec | tf.TensorSpec:
+        if not self.built:
+            return None
+        serialized_spec = self.get_build_config()['spec']
+        deserialized_spec = _deserialize_spec(serialized_spec)
+        input_spec = Input(deserialized_spec)
+        output_spec = self.compute_output_spec(input_spec)
+        if not tensors.is_graph(output_spec):
+            return tf.TensorSpec(output_spec.shape, output_spec.dtype)
+        spec_dict = tf.nest.map_structure(
+            lambda t: tf.TensorSpec(t.shape, t.dtype), output_spec
+        )
+        return tensors.GraphTensor.Spec(**spec_dict)
+
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class GraphConv(GraphLayer):
