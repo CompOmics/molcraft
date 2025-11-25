@@ -118,8 +118,6 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         self._model_layers = kwargs.pop('model_layers', None)
         super().__init__(*args, **kwargs)
         self.jit_compile = False 
-        # Model variables are variables outside of layers
-        self._model_variables = None
 
     @classmethod
     def from_layers(cls, graph_layers: list, **kwargs):
@@ -189,7 +187,6 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         steps_per_execution: int = 1,
         jit_compile: str | bool = False,
         auto_scale_loss: bool = True,
-        use_layer_optimizers: bool = False,
         **kwargs
     ) -> None:
         """Compiles the model.
@@ -202,13 +199,10 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
             metrics:
                 A list of metrics to be used during training (`fit`) and evaluation
                 (`evaluate`). Should be `keras.metrics.Metric` subclasses.
-            use_layer_optimizers:
-                Whether to use the optimizers of the sub-layers (sub-models).
             kwargs:
                 See `Model.compile` in Keras documentation. 
                 May or may not apply here.
         """
-        self._use_layer_optimizers = use_layer_optimizers
         super().compile(
             optimizer=optimizer,
             loss=loss,
@@ -311,8 +305,6 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         config = super().get_compile_config()
         if config is None:
             return
-        if hasattr(self, '_use_layer_optimizers'):
-            config['use_layer_optimizers'] = self._use_layer_optimizers
         return config
 
     def compile_from_config(self, config: dict | None) -> None:
@@ -320,7 +312,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
             return
         config = keras.utils.deserialize_keras_object(config)
         self.compile(**config)
-        if getattr(self, 'optimizer', None) is not None and self.built:
+        if hasattr(self, 'optimizer') and self.built:
             self.optimizer.build(self.trainable_variables)
 
     def save(
@@ -434,36 +426,14 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         return keras.models.Model(inputs, outputs, name=f'{self.name}_head')
 
     def train_step(self, tensor: tensors.GraphTensor) -> dict[str, float]:
-
-        with tf.GradientTape(persistent=self._use_layer_optimizers) as tape:
+        with tf.GradientTape() as tape:
             output = self(tensor, training=True)
             y, y_pred, sample_weight = _get_loss_args(tensor, output)
             loss = self.compute_loss(tensor, y, y_pred, sample_weight)
-            if self.optimizer is not None:
-                loss = self.optimizer.scale_loss(loss)
-
-        if not self._use_layer_optimizers:
-            trainable_weights = self.trainable_weights 
-            gradients = tape.gradient(loss, trainable_weights)
-            self.optimizer.apply_gradients(zip(gradients, trainable_weights))
-        else:
-            if self._model_variables is None:
-                self._model_variables = _get_model_variables(
-                    self.trainable_weights, self.layers
-                )
-            for layer in self.layers:
-                trainable_weights = layer.trainable_weights 
-                gradients = tape.gradient(loss, trainable_weights)
-                layer_optimizer = getattr(layer, 'optimizer', None)
-                if layer_optimizer is not None:
-                    layer_optimizer.apply_gradients(zip(gradients, trainable_weights))
-                else:
-                    self.optimizer.apply_gradients(zip(gradients, trainable_weights))
-            
-            if self._model_variables:
-                gradients = tape.gradient(loss, self._model_variables)
-                self.optimizer.apply_gradients(zip(gradients, self._model_variables))
-
+            loss = self.optimizer.scale_loss(loss)
+        trainable_weights = self.trainable_weights 
+        gradients = tape.gradient(loss, trainable_weights)
+        self.optimizer.apply_gradients(zip(gradients, trainable_weights))
         return self.compute_metrics(tensor, y, y_pred, sample_weight)
     
     def test_step(self, tensor: tensors.GraphTensor) -> dict[str, float]:
@@ -497,7 +467,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
 
 @keras.saving.register_keras_serializable(package="molcraft")
 class FunctionalGraphModel(functional.Functional, GraphModel):
-    
+
     @property 
     def layers(self):
         return [
@@ -651,16 +621,3 @@ def _get_loss_args(
             '`prediction` exists in either the `context`, `node` or `edge`.'
         )
     return data['label'], prediction, data.get('sample_weight')
-
-def _get_model_variables(
-    model_variables: list[tf.Variable],
-    model_layers: list[keras.layers.Layer | layers.GraphLayer | GraphModel]
-) -> list[tf.Variable]:
-    layer_variable_refs = []
-    for layer in model_layers:
-        trainable_weights = layer.trainable_weights 
-        layer_variable_refs.extend([v.value.ref() for v in trainable_weights])
-    layer_variable_refs = set(layer_variable_refs)
-    model_variable_refs = {v.value.ref() for v in model_variables}
-    remaining_variable_refs = model_variable_refs - layer_variable_refs
-    return [v for v in model_variables if v.value.ref() in remaining_variable_refs]
