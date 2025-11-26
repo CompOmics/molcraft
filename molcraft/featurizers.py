@@ -56,8 +56,8 @@ class GraphFeaturizer(abc.ABC):
         )
 
     def _call(self, inputs: typing.Any) -> tensors.GraphTensor:
+        inputs, context = _unpack_inputs(inputs)
         if _call_kwargs(self.call):
-            inputs, context = _unpack_inputs(inputs)
             graph = self.call(inputs, context=context)
         else:
             graph = self.call(inputs)
@@ -81,7 +81,7 @@ class GraphFeaturizer(abc.ABC):
         if isinstance(inputs, (np.ndarray, pd.Series)):
             inputs = inputs.tolist()
         elif isinstance(inputs, pd.DataFrame):
-            inputs = inputs.itertuples(index=True, name='Example')
+            inputs = inputs.iterrows()
 
         if not multiprocessing:
             outputs = [self._call(x) for x in inputs]
@@ -592,28 +592,25 @@ def _convert_dtypes(data: dict[str, dict[str, np.ndarray]]) -> np.ndarray:
     return data
 
 def _unpack_inputs(inputs) -> tuple:
-
-    if isinstance(inputs, pd.Series):
-        namedtuple = collections.namedtuple(
-            'Example', ['Index'] + list(inputs.index)
-        )
-        inputs = namedtuple(**{**{'Index': inputs.name}, **inputs.to_dict()})
-    elif isinstance(inputs, np.ndarray):
+    if isinstance(inputs, np.ndarray):
         inputs = tuple(inputs.tolist())
     elif isinstance(inputs, list):
         inputs = tuple(inputs)
-
     if not isinstance(inputs, tuple):
         mol, context = inputs, {}
-    elif not hasattr(inputs, 'Index'):
-        mol, *context = inputs
-        context = dict(zip(['label', 'sample_weight'], map(np.asarray, context)))
-    else:
-        index, mol, *context = inputs 
+    elif isinstance(inputs[0], int) and isinstance(inputs[1], pd.Series):
+        index, series = inputs
+        mol = series.values[0]
         context = dict(
-            zip(map(_snake_case, inputs._fields[2:]), map(np.asarray, context))
+            zip(
+                map(_snake_case, series.index[1:]), 
+                map(np.asarray, series.values[1:])
+            )
         )
         context['index'] = np.asarray(index)
+    else:
+        mol, *context = inputs
+        context = dict(zip(['label', 'sample_weight'], map(np.asarray, context)))
     return mol, context
     
 def _snake_case(x: str) -> str:

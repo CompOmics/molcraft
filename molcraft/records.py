@@ -40,7 +40,7 @@ def write(
     with tf.device(device):
         
         if isinstance(inputs, (pd.DataFrame, pd.Series)):
-            inputs = list(inputs.itertuples(index=True, name='Example'))
+            inputs = list(inputs.iterrows())
 
         example = featurizer._call(inputs[0])
         save_spec(os.path.join(path, 'spec.pb'), example.spec)
