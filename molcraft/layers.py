@@ -1609,6 +1609,8 @@ class AddContext(GraphLayer):
             if context.dtype.is_floating:
                 context = keras.ops.cast(context, dtype=tensor.edge['source'].dtype)
             context = keras.utils.to_categorical(context, self._num_categories)
+        elif len(keras.ops.shape(context)) == 1:
+            context = keras.ops.expand_dims(context, axis=1)
         context = self._intermediate_dense(context)
         context = self._intermediate_norm(context)
         context = self._final_dense(context)
