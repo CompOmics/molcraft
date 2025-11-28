@@ -1,15 +1,16 @@
 import warnings
-import collections
-import functools
 import inspect
 import keras 
 import json
 import abc
+import re
 import typing 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 import multiprocessing as mp
+
+from rdkit.Chem import rdChemReactions
 
 from pathlib import Path
 
@@ -495,6 +496,75 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         return super().from_config(config)
 
 
+class PeptideGraphFeaturizer(MolGraphFeaturizer):
+
+    def __init__(
+        self, 
+        atom_features: list[features.Feature] | str = 'auto',
+        bond_features: list[features.Feature] | str | None = 'auto',
+        molecule_features: list[descriptors.Descriptor] | str | None = None,
+        super_node: bool = False,
+        self_loops: bool = False,
+        include_hydrogens: bool = False,
+        wildcards: bool = False,
+        monomers: dict[str, str] = None
+    ) -> None:
+        super().__init__(
+            atom_features=atom_features,
+            bond_features=bond_features,
+            molecule_features=molecule_features,
+            super_node=super_node,
+            self_loops=self_loops,
+            include_hydrogens=include_hydrogens,
+            wildcards=wildcards,
+        )
+        if not monomers:
+            monomers = {}
+        monomers = {**_default_monomers, **monomers}
+        self.monomers = monomers
+        
+    def call(self, mol, context=None):
+        mol = self.mol_from_sequence(mol)
+        subgraph_indicator = [
+            int(atom.GetProp('react_idx')) for atom in mol.atoms
+        ]
+        if self._super_node:
+            subgraph_indicator.append(-1)
+        graph = super().call(mol, context=context)
+        return graph.update({'node': {'subgraph_indicator': subgraph_indicator}})
+
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config['monomers'] = dict(self.monomers)
+        return config 
+        
+    def mol_from_sequence(self, sequence: str) -> chem.Mol:
+        symbols = [
+            match.group(0) for match in re.finditer(_monomer_pattern, sequence)
+        ]
+        monomers = [
+            chem.Mol.from_encoding(self.monomers[s]) for s in symbols
+        ]
+        backbone_template = '[N:{0}][C:{1}][C:{2}](=[O:{3}])'
+        product = reactants = ''
+        for i in range(len(monomers)):
+            backbone = backbone_template.format((i*4)+0, (i*4)+1, (i*4)+2, (i*4)+3)
+            product += backbone
+            reactants += backbone
+            c_terminal = (i == len(monomers) - 1)
+            if c_terminal:
+                product += f'[O:{(i*4)+4}]'
+                reactants += f'[O:{(i*4)+4}]'
+            else:
+                reactants += '[O]' + '.'
+        reaction = rdChemReactions.ReactionFromSmarts(reactants + '>>' + product)
+        products = reaction.RunReactants(monomers)
+        if not len(products):
+            raise ValueError(f'Could not obtain polymer from monomers: {monomers}.')
+        polymer = products[0][0]
+        return chem.sanitize_mol(polymer)
+    
+
 def save_featurizer(
     featurizer: GraphFeaturizer, 
     filepath: str | Path, 
@@ -622,3 +692,36 @@ def _call_kwargs(func) -> bool:
         (param.kind == inspect.Parameter.VAR_KEYWORD) or (param.name == 'context')
         for param in signature.parameters.values()
     )
+
+_monomer_pattern = "|".join([
+    r'(\[[A-Za-z0-9]+\]-[A-Z]\[[A-Za-z0-9]+\])',    # [Mod]-A[Mod]
+    r'([A-Z]\[[A-Za-z0-9]+\]-\[[A-Za-z0-9]+\])',    # A[Mod]-[Mod]
+    r'(\[[A-Za-z0-9]+\]-[A-Z])',                    # [Mod]-A
+    r'([A-Z]-\[[A-Za-z0-9]+\])',                    # A-[Mod]
+    r'([A-Z]\[[A-Za-z0-9]+\])',                     # A[Mod]
+    r'([A-Z])',                                     # A
+    r'\(.*?\)'                                      # (A)
+])
+
+_default_monomers = {
+    "A": "N[C@@H](C)C(=O)O",
+    "C": "N[C@@H](CS)C(=O)O",
+    "D": "N[C@@H](CC(=O)O)C(=O)O",
+    "E": "N[C@@H](CCC(=O)O)C(=O)O",
+    "F": "N[C@@H](Cc1ccccc1)C(=O)O",
+    "G": "NCC(=O)O",
+    "H": "N[C@@H](CC1=CN=C-N1)C(=O)O",
+    "I": "N[C@@H](C(CC)C)C(=O)O",
+    "K": "N[C@@H](CCCCN)C(=O)O",
+    "L": "N[C@@H](CC(C)C)C(=O)O",
+    "M": "N[C@@H](CCSC)C(=O)O",
+    "N": "N[C@@H](CC(=O)N)C(=O)O",
+    "P": "N1[C@@H](CCC1)C(=O)O",
+    "Q": "N[C@@H](CCC(=O)N)C(=O)O",
+    "R": "N[C@@H](CCCNC(=N)N)C(=O)O",
+    "S": "N[C@@H](CO)C(=O)O",
+    "T": "N[C@@H](C(O)C)C(=O)O",
+    "V": "N[C@@H](C(C)C)C(=O)O",
+    "W": "N[C@@H](CC(=CN2)C1=C2C=CC=C1)C(=O)O",
+    "Y": "N[C@@H](Cc1ccc(O)cc1)C(=O)O",
+}
