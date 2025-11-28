@@ -254,7 +254,7 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
             return x
         edge_increment = ops.gather(
             self.node['feature'].row_starts(), self.edge['source'].value_rowids())
-        edge_increment = tf.cast(
+        edge_increment = keras.ops.cast(
             edge_increment, dtype=self.edge['source'].dtype)
         data = to_dict(self)
         flat_values = tf.nest.map_structure(flatten_fn, data)
@@ -294,7 +294,7 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
                 if force:
                     edge_decrement = ops.gather(edge_decrement, sorted_indices)
                     graph_indicator_edge = ops.gather(graph_indicator_edge, sorted_indices)
-                edge_decrement = tf.cast(edge_decrement, dtype=self.edge['source'].dtype)
+                edge_decrement = keras.ops.cast(edge_decrement, dtype=self.edge['source'].dtype)
             elif key == 'edge':
                 if force:
                     value = tf.nest.map_structure(lambda x: ops.gather(x, sorted_indices), value)
@@ -505,9 +505,9 @@ def to_dict(tensor: GraphTensor) -> dict:
     return {key: dict(tensor.__dict__[key]) for key in spec.__dict__}
 
 def from_dict(data: dict) -> GraphTensor:
-    data['context']['size'] = tf.cast(data['context']['size'], tf.int32)
-    data['edge']['source'] = tf.cast(data['edge']['source'], tf.int32)
-    data['edge']['target'] = tf.cast(data['edge']['target'], tf.int32)
+    data['context']['size'] = keras.ops.cast(data['context']['size'], tf.int32)
+    data['edge']['source'] = keras.ops.cast(data['edge']['source'], tf.int32)
+    data['edge']['target'] = keras.ops.cast(data['edge']['target'], tf.int32)
     return GraphTensor(**data)
 
 def is_graph(data):
