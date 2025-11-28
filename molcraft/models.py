@@ -498,7 +498,7 @@ def create(
     )
 
 def interpret(
-    model: GraphModel,
+    model: GraphModel | list[keras.layers.Layer | layers.GraphLayer],
     graph_tensor: tensors.GraphTensor,
 ) -> tensors.GraphTensor:
     x = graph_tensor
@@ -507,8 +507,12 @@ def interpret(
     graph_indicator = x.graph_indicator
     y_true = x.context.get('label')
     features = []
+    if isinstance(model, keras.Model):
+        model_layers = model.layers
+    else:
+        model_layers = model
     with tf.GradientTape(watch_accessed_variables=False) as tape:
-        for layer in model.layers:
+        for layer in model_layers:
             if isinstance(layer, keras.layers.InputLayer):
                 continue
             if isinstance(layer, layers.GraphNetwork):
