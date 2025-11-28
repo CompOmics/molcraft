@@ -1,4 +1,4 @@
-__version__ = '0.1.0rc9'
+__version__ = '0.1.0rc10'
 
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
