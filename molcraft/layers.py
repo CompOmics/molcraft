@@ -1376,18 +1376,12 @@ class SubgraphReadout(GraphLayer):
     def __init__(
         self,
         pad: bool = True,
-        add_mask: bool | None = None,
         ignore_super_node: bool = True,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self._pad = pad
         self._ignore_super_node = ignore_super_node
-        self._add_mask = (
-            add_mask if add_mask is not None else self._pad
-        )
-        if self._add_mask:
-            self._readout_mask = _ReadoutMask()
 
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         if 'subgraph_indicator' not in spec.node:
@@ -1436,15 +1430,9 @@ class SubgraphReadout(GraphLayer):
 
         return readout.to_tensor()
 
-    def compute_mask(self, inputs, previous_mask=None):
-        if not self._add_mask:
-            return None
-        return self._readout_mask(inputs)
-
     def get_config(self) -> dict:
         config = super().get_config()
         config['pad'] = self._pad
-        config['add_mask'] = self._add_mask
         config['ignore_super_node'] = self._ignore_super_node
         return config
 
@@ -1951,38 +1939,6 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
                     "pass the `Spec` of a 'flat' `GraphTensor` to `GNNInput`." 
                 )
     return inputs
-
-
-class _ReadoutMask(GraphLayer):
-
-    def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        if 'subgraph_indicator' not in spec.node:
-            raise ValueError(
-                'Could not find `subgraph_indicator` field in input.'
-            )
-        self._has_super = 'super' in spec.node
-
-    def propagate(self, tensor: tensors.GraphTensor) -> tf.Tensor:
-
-        size = tensor.context['size']
-        graph_indicator = tensor.graph_indicator
-        subgraph_indicator = tensor.node['subgraph_indicator']
-        node_feature = tensor.node['feature']
-
-        if self._has_super:
-            keep = (tensor.node['super'] == False)
-            graph_indicator = tf.boolean_mask(graph_indicator, keep)
-            subgraph_indicator = tf.boolean_mask(subgraph_indicator, keep)
-            node_feature = tf.boolean_mask(node_feature, keep)
-            size -= 1
-
-        num_subgraphs = keras.ops.segment_max(
-            subgraph_indicator, graph_indicator
-        )
-        num_subgraphs += 1
-        max_len = keras.ops.max(num_subgraphs) 
-        mask = tf.sequence_mask(num_subgraphs, maxlen=max_len)
-        return mask
 
 
 def _serialize_spec(spec: tensors.GraphTensor.Spec) -> dict:
