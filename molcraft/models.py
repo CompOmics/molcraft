@@ -430,6 +430,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
             output = self(tensor, training=True)
             y, y_pred, sample_weight = _get_loss_args(tensor, output)
             loss = self.compute_loss(tensor, y, y_pred, sample_weight)
+            self._loss_tracker.update_state(loss)
             loss = self.optimizer.scale_loss(loss)
         trainable_weights = self.trainable_weights 
         gradients = tape.gradient(loss, trainable_weights)
@@ -439,6 +440,8 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     def test_step(self, tensor: tensors.GraphTensor) -> dict[str, float]:
         output = self(tensor, training=False)
         y, y_pred, sample_weight = _get_loss_args(tensor, output)
+        loss = self.compute_loss(tensor, y, y_pred, sample_weight)
+        self._loss_tracker.update_state(loss)
         return self.compute_metrics(tensor, y, y_pred, sample_weight)
     
     def predict_step(self, tensor: tensors.GraphTensor) -> np.ndarray:
@@ -449,21 +452,16 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
             output = tensors.to_dict(output.unflatten())
         return output
 
-    def compute_loss(self, x, y, y_pred, sample_weight=None):
+    def compute_loss(self, x, y, y_pred, sample_weight=None) -> float:
         return super().compute_loss(x, y, y_pred, sample_weight)
-        
+
     def compute_metrics(self, x, y, y_pred, sample_weight=None) -> dict[str, float]:
-        loss = self.compute_loss(x, y, y_pred, sample_weight)
-        metric_results = {}
-        for metric in self.metrics:
-            if metric.name == "loss":
-                metric.update_state(loss)
-                metric_results[metric.name] = metric.result()
-            else:
-                metric.update_state(y, y_pred, sample_weight=sample_weight)
-                metric_results.update(metric.result())
-        return metric_results
-    
+        return super().compute_metrics(x, y, y_pred, sample_weight)
+
+    @property
+    def metrics(self) -> list[keras.metrics.Metric]:
+        return super().metrics
+
 
 @keras.saving.register_keras_serializable(package="molcraft")
 class FunctionalGraphModel(functional.Functional, GraphModel):
