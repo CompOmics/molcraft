@@ -79,9 +79,11 @@ class GraphFeaturizer(abc.ABC):
         ):
             return self._call(inputs)
         
-        if isinstance(inputs, (np.ndarray, pd.Series)):
+        if isinstance(inputs, np.ndarray):
             inputs = inputs.tolist()
-        elif isinstance(inputs, pd.DataFrame):
+        elif isinstance(inputs, (pd.Series, pd.DataFrame)):
+            if isinstance(inputs, pd.Series):
+                inputs = inputs.to_frame()
             inputs = inputs.iterrows()
 
         if not multiprocessing:
@@ -662,13 +664,15 @@ def _convert_dtypes(data: dict[str, dict[str, np.ndarray]]) -> np.ndarray:
     return data
 
 def _unpack_inputs(inputs) -> tuple:
+    if isinstance(inputs, (chem.Mol, chem.RDKitMol)):
+        return inputs, {}
     if isinstance(inputs, np.ndarray):
         inputs = tuple(inputs.tolist())
     elif isinstance(inputs, list):
         inputs = tuple(inputs)
     if not isinstance(inputs, tuple):
         mol, context = inputs, {}
-    elif isinstance(inputs[0], int) and isinstance(inputs[1], pd.Series):
+    elif len(inputs) > 1 and isinstance(inputs[1], pd.Series):
         index, series = inputs
         mol = series.values[0]
         context = dict(
