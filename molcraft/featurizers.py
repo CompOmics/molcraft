@@ -64,6 +64,12 @@ class GraphFeaturizer(abc.ABC):
             graph = self.call(inputs)
         if not isinstance(graph, tensors.GraphTensor):
             graph = tensors.from_dict(graph)
+        if not tensors.is_scalar(graph):
+            raise ValueError(
+                'The resulting `GraphTensor` output of `call` should be a scalar '
+                '`GraphTensor`. Namely, the `size` (of `context`) should be a rank-0 '
+                'tensor. And furthermore, the remaining `context` data should be unbatched.'
+            )
         return graph
 
     def __call__(
@@ -77,6 +83,9 @@ class GraphFeaturizer(abc.ABC):
         if not isinstance(
             inputs, (list, np.ndarray, pd.Series, pd.DataFrame, typing.Generator)
         ):
+            return self._call(inputs)
+        elif isinstance(inputs, pd.Series) and _get_mol_field(inputs):
+            inputs = inputs.copy()
             return self._call(inputs)
         
         if isinstance(inputs, np.ndarray):
@@ -664,29 +673,52 @@ def _convert_dtypes(data: dict[str, dict[str, np.ndarray]]) -> np.ndarray:
     return data
 
 def _unpack_inputs(inputs) -> tuple:
-    if isinstance(inputs, (chem.Mol, chem.RDKitMol)):
-        return inputs, {}
+
     if isinstance(inputs, np.ndarray):
         inputs = tuple(inputs.tolist())
     elif isinstance(inputs, list):
         inputs = tuple(inputs)
+    elif isinstance(inputs, pd.Series):
+        inputs = (inputs.name, inputs)
+
     if not isinstance(inputs, tuple):
         mol, context = inputs, {}
-    elif len(inputs) > 1 and isinstance(inputs[1], pd.Series):
-        index, series = inputs
-        mol = series.values[0]
+        return mol, context
+    
+    if not isinstance(inputs[-1], pd.Series):
+        mol, *context = inputs
         context = dict(
             zip(
-                map(_snake_case, series.index[1:]), 
-                map(np.asarray, series.values[1:])
+                ['label', 'sample_weight'], 
+                map(np.asarray, context)
             )
         )
-        context['index'] = np.asarray(index)
-    else:
-        mol, *context = inputs
-        context = dict(zip(['label', 'sample_weight'], map(np.asarray, context)))
-    return mol, context
+        return mol, context
+
+    index, series = inputs
+
+    mol_field = _get_mol_field(series)
+    if mol_field is None:
+        mol_field = series.index[0]
     
+    mol = series.pop(mol_field)
+
+    context = dict(
+        zip(
+            map(_snake_case, series.index), 
+            map(np.asarray, series.values)
+        )
+    )
+    context['index'] = np.asarray(index)
+    return mol, context
+
+def _get_mol_field(series: pd.Series) -> str:
+    for name in series.index:
+        if name.lower().strip() in ['smiles', 'inchi', 'sequence']:
+            return name 
+    else:
+        return None
+
 def _snake_case(x: str) -> str:
     return '_'.join(x.lower().split())
 
