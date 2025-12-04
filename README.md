@@ -1,32 +1,25 @@
 <img src="https://github.com/akensert/molcraft/blob/main/docs/_static/molcraft-logo.png" alt="molcraft-logo" width="90%">
 
-**Deep Learning on Molecules**: A Minimalistic GNN package for Molecular ML.
+**Deep Learning on Molecules**: Graph Neural Networks for Molecular Machine Learning.
 
-> [!NOTE]  
-> In progress.
+## Examples
 
-## Installation
+### Context-Aware Graph Neural Network
 
-For CPU users:
-
-```bash
-pip install molcraft
-```
-
-For GPU users:
-```bash
-pip install molcraft[gpu]
-```
-
-## Examples 
+Implement a context-aware graph neural network by embedding context features in the super node.
+The super node is a virtual node bidirectionally linked to all atomic nodes,
+allowing both efficient information propagation and inclusion of context features.
+Context features may be continuous or discrete (categorical); for discrete context features, specify
+the number of categories expected via `num_categories` of the `AddContext` layer.
 
 ```python
 from molcraft import features
-from molcraft import descriptors
 from molcraft import featurizers 
 from molcraft import layers
-from molcraft import models 
+from molcraft import models
+
 import keras
+import pandas as pd
 
 featurizer = featurizers.MolGraphFeaturizer(
     atom_features=[
@@ -40,31 +33,44 @@ featurizer = featurizers.MolGraphFeaturizer(
     ],
     super_node=True,
     self_loops=True,
-    include_hydrogens=False,
 )
 
-graph = featurizer([('N[C@@H](C)C(=O)O', 2.5), ('N[C@@H](CS)C(=O)O', 1.5)])
-print(graph)
+df = pd.DataFrame({
+    'smiles': [
+        'N[C@@H](C)C(=O)O', 'N[C@@H](CS)C(=O)O' 
+    ],
+    'label': [3.5, -1.5],
+    'ph': [7.2, 4.5],
+    'temperature': [35., 45.],
+})
+
+graph = featurizer(df)
 
 model = models.GraphModel.from_layers(
     [
         layers.Input(graph.spec),
         layers.NodeEmbedding(dim=128),
         layers.EdgeEmbedding(dim=128),
+        layers.AddContext(field='ph'),
+        layers.AddContext(field='temperature'),
         layers.GraphConv(units=128),
         layers.GraphConv(units=128),
         layers.GraphConv(units=128),
         layers.GraphConv(units=128),
-        layers.Readout(),
+        layers.Readout(mode='mean'),
         keras.layers.Dense(units=1024, activation='elu'),
         keras.layers.Dense(units=1024, activation='elu'),
         keras.layers.Dense(1)
     ]
 )
 
-pred = model(graph)
-print(pred)
+model.compile(
+    keras.optimizers.Adam(1e-4), keras.losses.MeanSquaredError()
+)
+model.fit(graph, epochs=30)
+pred = model.predict(graph)
 
+# Uncomment below to save and load model (including featurizer)
 # featurizers.save_featurizer(featurizer, '/tmp/featurizer.json')
 # models.save_model(model, '/tmp/model.keras')
 
@@ -72,3 +78,15 @@ print(pred)
 # loaded_model = models.load_model('/tmp/model.keras')
 ```
 
+## Installation
+
+For CPU users:
+
+```bash
+pip install molcraft
+```
+
+For GPU users:
+```bash
+pip install molcraft[gpu]
+```
