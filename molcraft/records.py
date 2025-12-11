@@ -103,16 +103,18 @@ def read(
     shuffle_files: bool = False
 ) -> tf.data.Dataset:
     spec = load_spec(os.path.join(path, 'spec.pb'))
-    filenames = sorted(glob.glob(os.path.join(path, '*.tfrecord')))
-    num_files = len(filenames)
-    ds = tf.data.Dataset.from_tensor_slices(filenames)
-    if shuffle_files:
-        ds = ds.shuffle(num_files)
-    ds = ds.interleave(
-        tf.data.TFRecordDataset, num_parallel_calls=1)
+    ds = tf.data.Dataset.list_files(
+        os.path.join(path, '*.tfrecord'),
+        shuffle=shuffle_files
+    )
+    ds = tf.data.TFRecordDataset(
+        ds,
+        num_parallel_reads=tf.data.AUTOTUNE
+    )
     ds = ds.map(
         lambda x: _parse_example(x, spec),
-        num_parallel_calls=tf.data.AUTOTUNE)
+        num_parallel_calls=tf.data.AUTOTUNE
+    )
     if not tensors.is_scalar(spec):
         ds = ds.unbatch()
     return ds
