@@ -85,7 +85,6 @@ class GraphFeaturizer(abc.ABC):
         ):
             return self._call(inputs)
         elif isinstance(inputs, pd.Series) and _get_mol_field(inputs):
-            inputs = inputs.copy()
             return self._call(inputs)
         
         if isinstance(inputs, np.ndarray):
@@ -696,6 +695,7 @@ def _unpack_inputs(inputs) -> tuple:
         return mol, context
 
     index, series = inputs
+    series = series.copy()
 
     mol_field = _get_mol_field(series)
     if mol_field is None:
