@@ -1642,6 +1642,7 @@ class AddContext(GraphLayer):
         intermediate_activation: str | keras.layers.Activation | None = 'relu',
         drop: bool = False,
         normalize: bool = False,
+        categories: list[str] | None = None,
         num_categories: int | None = None,
         **kwargs
     ) -> None:
@@ -1653,28 +1654,63 @@ class AddContext(GraphLayer):
             intermediate_activation
         )
         self._normalize = normalize
-        self._num_categories = num_categories
-        
+        self._categories = categories
+        if self._categories is not None:
+            if not isinstance(self._categories, (list, tuple)):
+                warnings.warn(
+                    f'`categories` ({type(self._categories)}) should be a `list`, `tuple`. '
+                    'Automatically converting it to a `list` and sorting it.'
+                )
+                self._categories = sorted(list(self._categories))
+            self._num_categories = len(self._categories)
+        else:
+            self._num_categories = num_categories
+
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        is_categorical = spec.context[self._field].dtype.is_integer
-        if is_categorical and not self._num_categories:
+
+        is_str_categorical = not spec.context[self._field].dtype.is_numeric
+        is_int_categorical = spec.context[self._field].dtype.is_integer
+
+        if is_str_categorical and not self._categories:
+            raise ValueError(
+                f'Found context ({self._field}) to be categorical (`str` dtype), but `categories`'
+                'to be `None`. Please specify `categories` for categorical context of dtype `str`.'
+            )
+        elif is_int_categorical and not self._num_categories:
             raise ValueError(
                 f'Found context ({self._field}) to be categorical (`int` dtype), but `num_categories`'
-                'to be `None`. Please specify `num_categories` for categorical context.'
+                'to be `None`. Please specify `num_categories` for categorical context of dtype `int`.'
             )
-        elif not is_categorical and self._num_categories:
+        elif not (is_int_categorical or is_str_categorical) and self._num_categories:
             warnings.warn(
                 f'`num_categories` is set to {self._num_categories}, but found context to be '
                 'continuous (`float` dtype). Layer will cast context from `float` to `int` '
                 'before one-hot encoding it.'
             )
+
+        if self._categories is not None:
+            self._category_mapping = tf.lookup.StaticHashTable(
+                tf.lookup.KeyValueTensorInitializer(
+                    keys=self._categories, 
+                    values=keras.ops.arange(self._num_categories)
+                ),
+                default_value=-1,
+            )
+        else:
+            self._category_mapping = None
+
         feature_dim = spec.node['feature'].shape[-1]
         self._has_super_node = 'super' in spec.node
         if self._intermediate_dim is None:
             self._intermediate_dim = feature_dim * 2
-        self._intermediate_dense = self.get_dense(
-            self._intermediate_dim, activation=self._intermediate_activation
-        )
+        if self._category_mapping is not None:
+            self._category_embedding = self.get_weight(
+                shape=(self._num_categories, self._intermediate_dim)
+            )
+        else:
+            self._intermediate_dense = self.get_dense(
+                units=self._intermediate_dim
+            )
         self._final_dense = self.get_dense(feature_dim)
         if not self._normalize:
             self._intermediate_norm = keras.layers.Identity()
@@ -1685,13 +1721,18 @@ class AddContext(GraphLayer):
 
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         context = tensor.context[self._field]
-        if self._num_categories:
-            if context.dtype.is_floating:
-                context = keras.ops.cast(context, dtype=tensor.edge['source'].dtype)
-            context = keras.utils.to_categorical(context, self._num_categories)
-        elif len(keras.ops.shape(context)) == 1:
-            context = keras.ops.expand_dims(context, axis=1)
-        context = self._intermediate_dense(context)
+        if self._category_mapping is not None:
+            context = self._category_mapping.lookup(context)
+            context = ops.gather(self._category_embedding, context)
+        else:
+            if self._num_categories:
+                if context.dtype.is_floating:
+                    context = keras.ops.cast(context, dtype=tensor.edge['source'].dtype)
+                context = keras.utils.to_categorical(context, self._num_categories)
+            elif len(keras.ops.shape(context)) == 1:
+                context = keras.ops.expand_dims(context, axis=1)
+            context = self._intermediate_dense(context)
+        context = self._intermediate_activation(context)
         context = self._intermediate_norm(context)
         context = self._final_dense(context)
         if self._has_super_node:
@@ -1717,6 +1758,7 @@ class AddContext(GraphLayer):
             ),
             'drop': self._drop,
             'normalize': self._normalize,
+            'categories': self._categories,
             'num_categories': self._num_categories,
         })
         return config
