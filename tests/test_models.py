@@ -19,11 +19,12 @@ class TestModel(unittest.TestCase):
                 context={
                     'size': keras.ops.array([2, 3], dtype='int32'),
                     'label': keras.ops.array([1., 2.], dtype='float32'),
-                    'weight': keras.ops.array([0.5, 1.25], dtype='float32'),
+                    'sample_weight': keras.ops.array([0.5, 1.25], dtype='float32'),
+                    'feature': keras.ops.array([0.5, 1.25], dtype='float32'),
                 },
                 node={
                     'feature': keras.ops.array([[1., 2.], [3., 4.], [5., 6.], [6., 7.], [8., 9.]], dtype='float32'),
-                    'weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75], dtype='float32')
+                    'sample_weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75], dtype='float32')
                 },
                 edge={
                     'source': keras.ops.array([0, 1, 3, 4, 4, 3, 2], dtype='int32'),
@@ -36,11 +37,12 @@ class TestModel(unittest.TestCase):
                 context={
                     'size': keras.ops.array([2, 3], dtype='int32'),
                     'label': keras.ops.array([1., 2.], dtype='float32'),
-                    'weight': keras.ops.array([0.5, 1.25], dtype='float32'),
+                    'sample_weight': keras.ops.array([0.5, 1.25], dtype='float32'),
+                    'feature': keras.ops.array([0.5, 1.25], dtype='float32'),
                 },
                 node={
                     'feature': keras.ops.array([[1., 2.], [3., 4.], [5., 6.], [6., 7.], [8., 9.]], dtype='float32'),
-                    'weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75], dtype='float32')
+                    'sample_weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75], dtype='float32')
                 },
                 edge={
                     'source': keras.ops.zeros([0], dtype='int32'),
@@ -53,11 +55,12 @@ class TestModel(unittest.TestCase):
                 context={
                     'size': keras.ops.array([0, 0], dtype='int32'),
                     'label': keras.ops.array([1., 2.], dtype='float32'),
-                    'weight': keras.ops.array([0.5, 1.25], dtype='float32'),
+                    'sample_weight': keras.ops.array([0.5, 1.25], dtype='float32'),
+                    'feature': keras.ops.array([0.5, 1.25], dtype='float32'),
                 },
                 node={
                     'feature': keras.ops.zeros([0, 2], dtype='float32'),
-                    'weight': keras.ops.zeros([0], dtype='float32')
+                    'sample_weight': keras.ops.zeros([0], dtype='float32')
                 },
                 edge={
                     'source': keras.ops.zeros([0], dtype='int32'),
@@ -70,11 +73,12 @@ class TestModel(unittest.TestCase):
                 context={
                     'size': keras.ops.array([2, 3, 2], dtype='int32'),
                     'label': keras.ops.array([1., 2., 3.], dtype='float32'),
-                    'weight': keras.ops.array([0.5, 1.25, 0.75], dtype='float32'),
+                    'sample_weight': keras.ops.array([0.5, 1.25, 0.75], dtype='float32'),
+                    'feature': keras.ops.array([0.5, 1.25, 0.75], dtype='float32'),
                 },
                 node={
                     'feature': keras.ops.array([[1., 2.], [3., 4.], [5., 6.], [6., 7.], [8., 9.], [10., 11.], [12., 13.]], dtype='float32'),
-                    'weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75, 0.25, 0.25], dtype='float32')
+                    'sample_weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75, 0.25, 0.25], dtype='float32')
                 },
                 edge={
                     'source': keras.ops.array([0, 1, 4, 3, 4, 5, 6, 6], dtype='int32'),
@@ -87,11 +91,12 @@ class TestModel(unittest.TestCase):
                 context={
                     'size': keras.ops.array([2, 3, 2], dtype='int32'),
                     'label': keras.ops.array([1., 2., 3.], dtype='float32'),
-                    'weight': keras.ops.array([0.5, 1.25, 0.75], dtype='float32'),
+                    'sample_weight': keras.ops.array([0.5, 1.25, 0.75], dtype='float32'),
+                    'feature': keras.ops.array([0.5, 1.25, 0.75], dtype='float32'),
                 },
                 node={
                     'feature': keras.ops.array([[1., 2.], [3., 4.], [5., 6.], [6., 7.], [8., 9.], [10., 11.], [12., 13.]], dtype='float32'),
-                    'weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75, 0.25, 0.25], dtype='float32')
+                    'sample_weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75, 0.25, 0.25], dtype='float32')
                 },
                 edge={
                     'source': keras.ops.array([4, 3, 4, 5, 6, 6], dtype='int32'),
@@ -104,11 +109,12 @@ class TestModel(unittest.TestCase):
                 context={
                     'size': keras.ops.array([2, 3, 3], dtype='int32'),
                     'label': keras.ops.array([1., 2., 3.], dtype='float32'),
-                    'weight': keras.ops.array([0.5, 1.25, 0.75], dtype='float32'),
+                    'sample_weight': keras.ops.array([0.5, 1.25, 0.75], dtype='float32'),
+                    'feature': keras.ops.array([0.5, 1.25, 0.75], dtype='float32'),
                 },
                 node={
                     'feature': keras.ops.array([[1., 2.], [3., 4.], [5., 6.], [6., 7.], [8., 9.], [10., 11.], [12., 13.], [14., 15.]], dtype='float32'),
-                    'weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75, 0.25, 0.25, 0.5], dtype='float32')
+                    'sample_weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75, 0.25, 0.25, 0.5], dtype='float32')
                 },
                 edge={
                     'source': keras.ops.array([0, 1, 4, 3, 4, 5, 6], dtype='int32'),
@@ -121,11 +127,12 @@ class TestModel(unittest.TestCase):
                 context={
                     'size': keras.ops.array([2, 3], dtype='int32'),
                     'label': keras.ops.array([1., 2.], dtype='float32'),
-                    'weight': keras.ops.array([0.5, 1.25], dtype='float32'),
+                    'sample_weight': keras.ops.array([0.5, 1.25], dtype='float32'),
+                    'feature': keras.ops.array([0.5, 1.25], dtype='float32'),
                 },
                 node={
                     'feature': keras.ops.array([[1., 2.], [3., 4.], [5., 6.], [6., 7.], [8., 9.]], dtype='float32'),
-                    'weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75], dtype='float32'),
+                    'sample_weight': keras.ops.array([0.50, 1.00, 2.00, 0.25, 0.75], dtype='float32'),
                     "wildcard": keras.ops.array([1, 2, 1, 0, 1]),
                 },
                 edge={
@@ -142,6 +149,7 @@ class TestModel(unittest.TestCase):
             inputs = layers.Input(tensor.spec)
             x = layers.NodeEmbedding(32)(inputs)
             x = layers.EdgeEmbedding(32)(x)
+            x = layers.AddContext()(x)
             x = layers.GTConv(32)(x)
             x = layers.GTConv(32)(x)
             x = layers.Readout('sum')(x)
@@ -164,6 +172,7 @@ class TestModel(unittest.TestCase):
             inputs = layers.Input(tensor.spec)
             x = layers.NodeEmbedding(32)(inputs)
             x = layers.EdgeEmbedding(32)(x)
+            x = layers.AddContext()(x)
             x = layers.GTConv(32)(x)
             x = layers.GTConv(32)(x)
             x = layers.Readout('sum')(x)
@@ -176,12 +185,13 @@ class TestModel(unittest.TestCase):
                 super().__init__(**kwargs)
                 self.e1 = layers.NodeEmbedding(32)
                 self.e2 = layers.EdgeEmbedding(32)
+                self.c0 = layers.AddContext()
                 self.c1 = layers.GTConv(32)
                 self.c2 = layers.GTConv(32)
                 self.r = layers.Readout('sum')
                 self.d = keras.layers.Dense(1)
             def propagate(self, tensor):
-                return self.d(self.r(self.c2(self.c1(self.e2(self.e1(tensor))))))
+                return self.d(self.r(self.c2(self.c1(self.c0(self.e2(self.e1(tensor)))))))
             
         example = self.tensors[-1]
 
@@ -225,12 +235,13 @@ class TestModel(unittest.TestCase):
                     super().__init__(**kwargs)
                     self.e1 = layers.NodeEmbedding(32)
                     self.e2 = layers.EdgeEmbedding(32)
+                    self.c0 = layers.AddContext()
                     self.c1 = layers.GTConv(32)
                     self.c2 = layers.GTConv(32)
                     self.r = layers.Readout('sum')
                     self.d = keras.layers.Dense(1)
                 def propagate(self, tensor):
-                    return self.d(self.r(self.c2(self.c1(self.e2(self.e1(tensor))))))
+                    return self.d(self.r(self.c2(self.c1(self.c0(self.e2(self.e1(tensor)))))))
             return Model()
                 
         for i, tensor in enumerate(self.tensors):
@@ -249,6 +260,7 @@ class TestModel(unittest.TestCase):
             inputs = layers.Input(tensor.spec)
             x = layers.NodeEmbedding(32)(inputs)
             x = layers.EdgeEmbedding(32)(x)
+            x = layers.AddContext()(x)
             x = layers.GTConv(32)(x)
             x = layers.GTConv(32)(x)
             x = layers.Readout('sum')(x)
@@ -273,6 +285,7 @@ class TestModel(unittest.TestCase):
             inputs = layers.Input(tensor.spec)
             x = layers.NodeEmbedding(units)(inputs)
             x = layers.EdgeEmbedding(units)(x)
+            x = layers.AddContext()(x)
             x = layers.GTConv(units)(x)
             x = layers.GTConv(units)(x)
             x = layers.Readout('sum')(x)
