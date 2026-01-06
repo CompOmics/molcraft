@@ -4,6 +4,7 @@ import math
 import glob
 import time
 import typing 
+import random
 import tensorflow as tf
 import numpy as np
 import pandas as pd
@@ -18,7 +19,8 @@ if typing.TYPE_CHECKING:
 def write(
     inputs: list[str | tuple], 
     featurizer: 'featurizers.GraphFeaturizer',
-    path: str, 
+    path: str,
+    shuffle: bool = False,
     exist_ok: bool = False,
     overwrite: bool = False, 
     num_files: typing.Optional[int] = None, 
@@ -42,14 +44,21 @@ def write(
         if isinstance(inputs, (pd.DataFrame, pd.Series)):
             inputs = list(inputs.iterrows())
 
+        if isinstance(inputs, tuple):
+            inputs = list(inputs)
+
+        if shuffle:
+            random.shuffle(inputs)
+            
         example = featurizer._call(inputs[0])
         save_spec(os.path.join(path, 'spec.pb'), example.spec)
 
-        if num_processes is None:
+        if num_processes is None and multiprocessing:
             num_processes = mp.cpu_count()
 
         if num_files is None:
-            num_files = min(len(inputs), max(1, math.ceil(len(inputs) / 1_000)))
+            num_examples_per_file = 1_000
+            num_files = min(len(inputs), max(1, math.ceil(len(inputs) / num_examples_per_file)))
             
         num_examples = len(inputs)
         chunk_sizes = [0] * num_files
@@ -100,12 +109,13 @@ def write(
     
 def read(
     path: str, 
+    shuffle: bool = False,
     shuffle_files: bool = False
 ) -> tf.data.Dataset:
     spec = load_spec(os.path.join(path, 'spec.pb'))
     ds = tf.data.Dataset.list_files(
         os.path.join(path, '*.tfrecord'),
-        shuffle=shuffle_files
+        shuffle=(shuffle_files or shuffle)
     )
     ds = tf.data.TFRecordDataset(
         ds,
@@ -117,6 +127,9 @@ def read(
     )
     if not tensors.is_scalar(spec):
         ds = ds.unbatch()
+    if shuffle:
+        buffer_size = 1000
+        ds = ds.shuffle(buffer_size)
     return ds
 
 def save_spec(path: str, spec: tensors.GraphTensor.Spec) -> None:
