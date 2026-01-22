@@ -78,6 +78,80 @@ pred = model.predict(graph)
 # loaded_model = models.load_model('/tmp/model.keras')
 ```
 
+### Hybrid Model for Peptides
+
+Implement a GNN-RNN hybrid model for peptides.
+
+```python
+from molcraft import features
+from molcraft import featurizers 
+from molcraft import layers
+from molcraft import models
+
+import keras
+import pandas as pd
+
+featurizer = featurizers.PeptideGraphFeaturizer(
+    atom_features=[
+        features.AtomType(),
+        features.NumHydrogens(),
+        features.Degree(),
+    ],
+    bond_features=[
+        features.BondType(),
+        features.IsRotatable(),
+    ],
+)
+
+# Allow modified amino acids:
+# featurizer.monomers.update({
+#     "C[Carbamidomethyl]": "N[C@@H](CSCC(=O)N)C(=O)O"
+# })
+
+df = pd.DataFrame({
+    'sequence': [
+        'CYIQNCPLG', 'KTTKS' 
+    ],
+    'label': [1.0, 0.0],
+})
+
+graph = featurizer(df)
+
+model = models.GraphModel.from_layers(
+    [
+        layers.Input(graph.spec),
+        layers.NodeEmbedding(dim=128),
+        layers.EdgeEmbedding(dim=128),
+        layers.GraphConv(units=128),
+        layers.GraphConv(units=128),
+        layers.GraphConv(units=128),
+        layers.GraphConv(units=128),
+        layers.PeptideReadout(),
+        keras.layers.Masking(),
+        keras.layers.Bidirectional(
+            keras.layers.LSTM(units=128, return_sequences=True)
+        ),
+        keras.layers.GlobalAveragePooling1D(),
+        keras.layers.Dense(units=1024, activation='elu'),
+        keras.layers.Dense(units=1024, activation='elu'),
+        keras.layers.Dense(1, activation='sigmoid')
+    ]
+)
+
+model.compile(
+    keras.optimizers.Adam(1e-4), keras.losses.BinaryCrossentropy()
+)
+model.fit(graph, epochs=30)
+pred = model.predict(graph)
+
+# Uncomment below to save and load model (including featurizer)
+# featurizers.save_featurizer(featurizer, '/tmp/featurizer.json')
+# models.save_model(model, '/tmp/model.keras')
+
+# loaded_featurizer = featurizers.load_featurizer('/tmp/featurizer.json')
+# loaded_model = models.load_model('/tmp/model.keras')
+```
+
 ## Installation
 
 For CPU users:
