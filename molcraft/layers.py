@@ -1373,12 +1373,12 @@ class Readout(GraphLayer):
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class SubgraphReadout(GraphLayer):
+class PeptideReadout(GraphLayer):
 
     def __init__(
         self,
         pad: bool = True,
-        ignore_super_node: bool = True,
+        ignore_super_node: bool = False,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
