@@ -1967,6 +1967,14 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
     # return a dictionary of nested tensor specs. However, the corresponding 
     # nest of tensors will temporarily be converted to a `GraphTensor` by the 
     # `GraphLayer`, to levarage the utility of a `GraphTensor` object. 
+
+    if not isinstance(spec, (tensors.GraphTensor, tensors.GraphTensor.Spec)):
+        raise ValueError(
+            f'{spec} not supported as input. Please pass a `GraphTensor.Spec`.'
+        )
+    elif isinstance(spec, tensors.GraphTensor):
+        spec = tf.type_spec_from_value(spec)
+
     inputs = {}
     for outer_field, data in spec.__dict__.items():
         inputs[outer_field] = {}
