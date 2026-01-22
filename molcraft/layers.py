@@ -1349,37 +1349,27 @@ class Readout(GraphLayer):
             self._reduce_fn = keras.ops.segment_sum
         elif mode.startswith('max'):
             self._reduce_fn = keras.ops.segment_max 
+        elif mode == 'super':
+            self._reduce_fn = keras.ops.segment_sum
+        elif mode == 'feature':
+            self._reduce_fn = None
         else:
             self._reduce_fn = ops.segment_mean
 
     def propagate(self, tensor: tensors.GraphTensor) -> tf.Tensor:
-        return self._reduce_fn(
-            tensor.node['feature'], tensor.graph_indicator, tensor.num_subgraphs
-        )
+        node_feature = tensor.node['feature']
+        if self.mode == 'feature':
+            return node_feature
+        if self.mode == 'super':
+            node_feature = keras.ops.where(
+                tensor.node['super'][:, None], node_feature, 0.0
+            )
+        return self._reduce_fn(node_feature, tensor.graph_indicator, tensor.num_subgraphs)
 
     def get_config(self) -> dict:
         config = super().get_config()
         config['mode'] = self.mode 
         return config 
-
-
-@keras.saving.register_keras_serializable(package='molcraft')
-class SuperReadout(GraphLayer):
-    
-    def build(self, spec: tensors.GraphTensor.Spec) -> None:
-        if 'super' not in spec.node:
-            raise ValueError(
-                'Could not find `super` field in input.'
-            )
-
-    def propagate(self, tensor: tensors.GraphTensor) -> tf.Tensor:
-        node_feature = tensor.node['feature']
-        node_feature = keras.ops.where(
-            tensor.node['super'][:, None], node_feature, 0.0
-        )
-        return keras.ops.segment_sum(
-            node_feature, tensor.graph_indicator, tensor.num_subgraphs
-        )
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
