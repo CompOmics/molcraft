@@ -472,6 +472,15 @@ class FunctionalGraphModel(functional.Functional, GraphModel):
             l for l in super().layers if not isinstance(l, keras.layers.InputLayer)
         ]
 
+def create(
+    *layers: list[keras.layers.Layer],
+    **kwargs
+) -> GraphModel:
+    if isinstance(layers[0], list):
+        layers = layers[0]
+    return GraphModel.from_layers(
+        list(layers), **kwargs
+    )
 
 def save_model(model: GraphModel, filepath: str | Path, *args, **kwargs) -> None:
     if not model.built:
@@ -485,90 +494,35 @@ def save_model(model: GraphModel, filepath: str | Path, *args, **kwargs) -> None
 def load_model(filepath: str | Path, inputs=None, *args, **kwargs) -> GraphModel:
     return keras.models.load_model(filepath, *args, **kwargs)
 
-def create(
-    *layers: list[keras.layers.Layer],
-    **kwargs
-) -> GraphModel:
-    if isinstance(layers[0], list):
-        layers = layers[0]
-    return GraphModel.from_layers(
-        list(layers), **kwargs
-    )
-
 def interpret(
     model: GraphModel | list[keras.layers.Layer | layers.GraphLayer],
     graph_tensor: tensors.GraphTensor,
 ) -> tensors.GraphTensor:
-    x = graph_tensor
-    if tensors.is_ragged(x):
-        x = x.flatten()
-    graph_indicator = x.graph_indicator
-    y_true = x.context.get('label')
-    features = []
-    if isinstance(model, keras.Model):
-        model_layers = model.layers
-    else:
-        model_layers = model
-    with tf.GradientTape(watch_accessed_variables=False) as tape:
-        for layer in model_layers:
-            if isinstance(layer, keras.layers.InputLayer):
-                continue
-            if isinstance(layer, layers.GraphNetwork):
-                x, taped_features = layer.tape_propagate(x, tape, training=False)
-                features.extend(taped_features)
-            else:
-                if (
-                    isinstance(layer, layers.GraphConv) and 
-                    isinstance(x, tensors.GraphTensor)
-                ):
-                    tape.watch(x.node['feature'])
-                    features.append(x.node['feature'])
-                x = layer(x, training=False)
-        y_pred = x
-        if y_true is not None and len(y_true.shape) > 1: 
-            target = tf.gather_nd(y_pred, tf.where(y_true != 0))
-        else:
-            target = y_pred
-    gradients = tape.gradient(target, features)
-    features = keras.ops.concatenate(features, axis=-1)
-    gradients = keras.ops.concatenate(gradients, axis=-1)
-    alpha = ops.segment_mean(gradients, graph_indicator)
-    alpha = ops.gather(alpha, graph_indicator)
-    maps = keras.ops.where(gradients != 0, alpha * features, gradients)
-    maps = keras.ops.sum(maps, axis=-1)
-    return graph_tensor.update(
-        {
-            'node': {
-                'saliency': maps
-            }
-        }
+    warnings.warn(
+        '`molcraft.models.interpret` is deprecated and will be removed in a future version. '
+        'Use `molcraft.saliency.GradCAM(model).predict(graph_tensor)` instead.',
+        category=DeprecationWarning,
+        stacklevel=2
     )
+    from molcraft import saliency
+    return saliency.GradCAM(model)(graph_tensor)
 
 def saliency(
-    model: GraphModel,
+    model: GraphModel | list[keras.layers.Layer | layers.GraphLayer],
     graph_tensor: tensors.GraphTensor,
 ) -> tensors.GraphTensor:
-    x = graph_tensor
-    if tensors.is_ragged(x):
-        x = x.flatten()
-    y_true = x.context.get('label')
-    with tf.GradientTape(watch_accessed_variables=False) as tape:
-        tape.watch(x.node['feature'])
-        y_pred = model(x, training=False)
-        if y_true is not None and len(y_true.shape) > 1: 
-            target = tf.gather_nd(y_pred, tf.where(y_true != 0))
-        else:
-            target = y_pred
-    gradients = tape.gradient(target, x.node['feature'])
-    gradients = keras.ops.absolute(gradients)
-    return graph_tensor.update(
-        {
-            'node': {
-                'feature_saliency': gradients
-            }
-        }
-    ) 
-    
+    warnings.warn(
+        '`molcraft.models.saliency` is deprecated and will be removed in a future version. '
+        'Use `molcraft.saliency.Saliency(model).predict(graph_tensor)` instead.',
+        category=DeprecationWarning,
+        stacklevel=2
+    )
+    from molcraft import saliency
+    result = saliency.Saliency(model, reduce_mode=None)(graph_tensor)
+    return result.update(
+        {'node': {'feature_saliency': result.node['saliency'], 'saliency': None}}
+    )
+
 def _functional_init_arguments(args, kwargs):
     return (
         (len(args) == 2)

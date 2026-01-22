@@ -16,3 +16,4 @@ from molcraft import callbacks
 from molcraft import datasets
 from molcraft import losses
 from molcraft import trainers
+from molcraft import saliency
