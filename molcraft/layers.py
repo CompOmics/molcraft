@@ -1373,6 +1373,19 @@ class Readout(GraphLayer):
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
+class SuperReadout(Readout):
+    def __init__(self, **kwargs):
+        kwargs.pop('mode', None)
+        super().__init__(mode='super', **kwargs)
+        warnings.warn(
+            '`molcraft.layers.SuperReadout` is deprecated and will be removed in a future version. '
+            'Use `molcraft.layers.Readout(mode="super")` instead.',
+            category=DeprecationWarning,
+            stacklevel=2
+        )
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
 class PeptideReadout(GraphLayer):
 
     def __init__(
