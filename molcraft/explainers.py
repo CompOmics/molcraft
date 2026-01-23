@@ -14,7 +14,7 @@ class Explainer(models.GraphModel):
 
     Args:
         model: 
-            A `models.GraphModel` to be (pre)trained.
+            A `models.GraphModel` to be explained/interpreted.
     '''
     
     def __init__(self, model: models.GraphModel, **kwargs) -> None:
