@@ -504,8 +504,11 @@ def interpret(
         category=DeprecationWarning,
         stacklevel=2
     )
-    from molcraft import saliency
-    return saliency.GradCAM(model)(graph_tensor)
+    from molcraft import explainers
+    result = explainers.GradCAM(model)(graph_tensor)
+    return result.update(
+        {'node': {'saliency': keras.ops.mean(result.node['saliency'], axis=-1)}}
+    )
 
 def saliency(
     model: GraphModel | list[keras.layers.Layer | layers.GraphLayer],
@@ -517,8 +520,8 @@ def saliency(
         category=DeprecationWarning,
         stacklevel=2
     )
-    from molcraft import saliency
-    result = saliency.Saliency(model, reduce_mode=None)(graph_tensor)
+    from molcraft import explainers
+    result = explainers.Saliency(model)(graph_tensor)
     return result.update(
         {'node': {'feature_saliency': result.node['saliency'], 'saliency': None}}
     )
