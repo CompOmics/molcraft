@@ -77,14 +77,18 @@ class GraphLayer(keras.layers.Layer):
         super().__init_subclass__(**kwargs)
         subclass_build = cls.build
 
+        invoke_gconv_build = hasattr(cls, 'aggregate') and cls.__name__ != 'GraphConv'
+        if invoke_gconv_build:
+            gconv_build = inspect.unwrap(super(cls, cls).build)
         @functools.wraps(subclass_build)
         def build_wrapper(self: GraphLayer, spec: tensors.GraphTensor.Spec | None):
             GraphLayer.build(self, spec)
+            if invoke_gconv_build:
+                gconv_build(self, spec)
             subclass_build(self, spec)
-            if not self.built and isinstance(self, keras.Model):
+            if not self.built:
                 symbolic_inputs = Input(spec)
-                self.built = True
-                self(symbolic_inputs)
+                self.compute_output_spec(symbolic_inputs)
 
         cls.build = build_wrapper
 
@@ -289,24 +293,6 @@ class GraphLayer(keras.layers.Layer):
         spec_dict = {k: dict(v) for k, v in spec.__dict__.items()}
         return tf.nest.pack_sequence_as(spec_dict, input)
 
-    @property
-    def output_spec(self) -> tensors.GraphTensor.Spec | tf.TensorSpec:
-        if not self.built:
-            return None
-        if isinstance(self, functional.Functional):
-            output_spec = self.output
-        else:
-            serialized_spec = self.get_build_config()['spec']
-            deserialized_spec = _deserialize_spec(serialized_spec)
-            input_spec = Input(deserialized_spec)
-            output_spec = self.compute_output_spec(input_spec)
-        if not tensors.is_graph(output_spec):
-            return tf.TensorSpec(output_spec.shape, output_spec.dtype)
-        spec_dict = tf.nest.map_structure(
-            lambda t: tf.TensorSpec(t.shape, t.dtype), output_spec
-        )
-        return tensors.GraphTensor.Spec(**spec_dict)
-
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class GraphConv(GraphLayer):
@@ -375,17 +361,6 @@ class GraphConv(GraphLayer):
         self._message_kwargs = _has_kwargs(self.message)
         self._aggregate_kwargs = _has_kwargs(self.aggregate)
         self._update_kwargs = _has_kwargs(self.update)
-
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        subclass_build = cls.build
-
-        @functools.wraps(subclass_build)
-        def build_wrapper(self, spec):
-            GraphConv.build(self, spec)
-            return subclass_build(self, spec)
-
-        cls.build = build_wrapper
 
     @property 
     def units(self):
