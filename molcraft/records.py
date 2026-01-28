@@ -110,17 +110,30 @@ def write(
 def read(
     path: str, 
     shuffle: bool = False,
-    shuffle_files: bool = False
+    shuffle_files: bool = False,
+    dynamic: bool = False,
 ) -> tf.data.Dataset:
     spec = load_spec(os.path.join(path, 'spec.pb'))
-    ds = tf.data.Dataset.list_files(
-        os.path.join(path, '*.tfrecord'),
-        shuffle=(shuffle_files or shuffle)
-    )
+    if dynamic:
+        def get_filenames():
+            filenames = sorted(glob.glob(os.path.join(path, '*.tfrecord')))
+            if (shuffle_files or shuffle):
+                random.shuffle(filenames)
+            return filenames
+        ds = tf.data.Dataset.from_generator(
+            get_filenames, output_signature=tf.TensorSpec(shape=(), dtype=tf.string)
+        )
+    else:
+        ds = tf.data.Dataset.list_files(
+            os.path.join(path, '*.tfrecord'),
+            shuffle=(shuffle_files or shuffle)
+        )
     ds = tf.data.TFRecordDataset(
         ds,
         num_parallel_reads=tf.data.AUTOTUNE
     )
+    if dynamic:
+        ds = ds.ignore_errors()
     ds = ds.map(
         lambda x: _parse_example(x, spec),
         num_parallel_calls=tf.data.AUTOTUNE
