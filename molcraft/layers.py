@@ -1981,7 +1981,7 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
     return inputs
 
 
-def _replicate(
+def replicate(
     layer: keras.layers.Layer,
     inputs: keras.KerasTensor | dict[str, dict[str, keras.KerasTensor]]
 ) -> keras.KerasTensor | dict[str, dict[str, keras.KerasTensor]]:
