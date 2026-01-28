@@ -1981,6 +1981,20 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
     return inputs
 
 
+def _replicate(
+    layer: keras.layers.Layer,
+    inputs: keras.KerasTensor | dict[str, dict[str, keras.KerasTensor]]
+) -> keras.KerasTensor | dict[str, dict[str, keras.KerasTensor]]:
+    '''Replicates the layer.
+
+    Specifically, this function clones the layer and calls this cloned layer
+    with the inputs, to then return its outputs.
+    '''
+    cloned_layer = layer.__class__.from_config(layer.get_config())
+    outputs = cloned_layer(inputs)
+    cloned_layer.set_weights(layer.get_weights())
+    return outputs
+
 def _serialize_spec(spec: tensors.GraphTensor.Spec) -> dict:
     serialized_spec = {}
     for outer_field, data in spec.__dict__.items():
