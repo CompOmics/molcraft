@@ -26,7 +26,8 @@ def write(
     num_files: typing.Optional[int] = None, 
     num_processes: typing.Optional[int] = None,
     multiprocessing: bool = False,
-    device: str = '/cpu:0'
+    device: str = '/cpu:0',
+    random_seed: int | None = None,
 ) -> None:
     
     if os.path.isdir(path):
@@ -48,7 +49,8 @@ def write(
             inputs = list(inputs)
 
         if shuffle:
-            random.shuffle(inputs)
+            rng = random.Random(random_seed)
+            rng.shuffle(inputs)
             
         example = featurizer._call(inputs[0])
         save_spec(os.path.join(path, 'spec.pb'), example.spec)
@@ -111,14 +113,17 @@ def read(
     path: str, 
     shuffle: bool = False,
     shuffle_files: bool = False,
-    dynamic: bool = False,
+    shuffle_buffer_size: int = 1000,
+    dynamic_list_files: bool = False,
+    random_seed: int | None = None,
 ) -> tf.data.Dataset:
     spec = load_spec(os.path.join(path, 'spec.pb'))
-    if dynamic:
+    if dynamic_list_files:
         def get_filenames():
             filenames = sorted(glob.glob(os.path.join(path, '*.tfrecord')))
             if (shuffle_files or shuffle):
-                random.shuffle(filenames)
+                rng = random.Random(random_seed)
+                rng.shuffle(filenames)
             return filenames
         ds = tf.data.Dataset.from_generator(
             get_filenames, output_signature=tf.TensorSpec(shape=(), dtype=tf.string)
@@ -126,13 +131,14 @@ def read(
     else:
         ds = tf.data.Dataset.list_files(
             os.path.join(path, '*.tfrecord'),
-            shuffle=(shuffle_files or shuffle)
+            shuffle=(shuffle_files or shuffle),
+            seed=random_seed,
         )
     ds = tf.data.TFRecordDataset(
         ds,
         num_parallel_reads=tf.data.AUTOTUNE
     )
-    if dynamic:
+    if dynamic_list_files:
         ds = ds.ignore_errors()
     ds = ds.map(
         lambda x: _parse_example(x, spec),
@@ -141,8 +147,7 @@ def read(
     if not tensors.is_scalar(spec):
         ds = ds.unbatch()
     if shuffle:
-        buffer_size = 1000
-        ds = ds.shuffle(buffer_size)
+        ds = ds.shuffle(shuffle_buffer_size, seed=random_seed)
     return ds
 
 def save_spec(path: str, spec: tensors.GraphTensor.Spec) -> None:
