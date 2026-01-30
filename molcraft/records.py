@@ -114,11 +114,11 @@ def read(
     shuffle: bool = False,
     shuffle_files: bool = False,
     shuffle_buffer_size: int = 1000,
-    dynamic_list_files: bool = False,
+    dynamic_file_discovery: bool = False,
     random_seed: int | None = None,
 ) -> tf.data.Dataset:
     spec = load_spec(os.path.join(path, 'spec.pb'))
-    if dynamic_list_files:
+    if dynamic_file_discovery:
         def get_filenames():
             filenames = sorted(glob.glob(os.path.join(path, '*.tfrecord')))
             if (shuffle_files or shuffle):
@@ -138,7 +138,7 @@ def read(
         ds,
         num_parallel_reads=tf.data.AUTOTUNE
     )
-    if dynamic_list_files:
+    if dynamic_file_discovery:
         ds = ds.ignore_errors()
     ds = ds.map(
         lambda x: _parse_example(x, spec),
