@@ -85,6 +85,27 @@ def scatter_add(
     return inputs + updates
 
 @keras.saving.register_keras_serializable(package='molcraft')
+def graph_softmax(
+    score: tf.Tensor,
+    graph_indicator: tf.Tensor,
+    num_graphs: int | None = None,
+) -> tf.Tensor:
+    if num_graphs is None:
+        num_segments = keras.ops.max(graph_indicator) + 1
+    else:
+        num_segments = num_graphs
+    score_max = keras.ops.segment_max(
+        score, graph_indicator, num_segments, sorted=False
+    )
+    score_max = gather(score_max, graph_indicator)
+    numerator = keras.ops.exp(score - score_max)
+    denominator = keras.ops.segment_sum(
+        numerator, graph_indicator, num_segments, sorted=False
+    )
+    denominator = gather(denominator, graph_indicator)
+    return numerator / denominator
+
+@keras.saving.register_keras_serializable(package='molcraft')
 def edge_softmax(
     score: tf.Tensor, 
     edge_target: tf.Tensor

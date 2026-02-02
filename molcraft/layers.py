@@ -1314,50 +1314,118 @@ class Readout(GraphLayer):
     """Readout layer.
     """
 
-    def __init__(self, mode: str | None = None, **kwargs):
+    def __init__(
+        self,
+        mode: str | None = None,
+        ignore_super_node: bool = False,
+        **kwargs
+    ) -> None:
         kwargs['kernel_initializer'] = None 
         kwargs['bias_initializer'] = None
         super().__init__(**kwargs)
         self.mode = mode
+        self._ignore_super_node = ignore_super_node
         mode = str(self.mode).lower()
         if mode.startswith('sum'):
             self._reduce_fn = keras.ops.segment_sum
         elif mode.startswith('max'):
             self._reduce_fn = keras.ops.segment_max 
-        elif mode == 'super':
-            self._reduce_fn = keras.ops.segment_sum
-        elif mode == 'feature':
-            self._reduce_fn = None
-        else:
+        elif mode is None or mode == 'mean' or mode == 'avg' or mode == 'average':
             self._reduce_fn = ops.segment_mean
+        else:
+            raise ValueError(
+                f'`mode` ({self.mode}) not supported. '
+                'Supported modes are: `sum`, `max` or `mean`.'
+            )
+
+    def build(self, spec: tensors.GraphTensor.Spec) -> None:
+        self._has_super_node = 'super' in spec.node
 
     def propagate(self, tensor: tensors.GraphTensor) -> tf.Tensor:
         node_feature = tensor.node['feature']
-        if self.mode == 'feature':
-            return node_feature
-        if self.mode == 'super':
-            node_feature = keras.ops.where(
-                tensor.node['super'][:, None], node_feature, 0.0
-            )
-        return self._reduce_fn(node_feature, tensor.graph_indicator, tensor.num_subgraphs)
+        graph_indicator = tensor.graph_indicator
+        if self._ignore_super_node and self._has_super_node:
+            regular_node = keras.ops.logical_not(tensor.node['super'])
+            node_feature = tf.boolean_mask(node_feature, regular_node)
+            graph_indicator = tf.boolean_mask(graph_indicator, regular_node)
+        return self._reduce_fn(node_feature, graph_indicator, tensor.num_graphs)
 
     def get_config(self) -> dict:
         config = super().get_config()
         config['mode'] = self.mode 
+        config['ignore_super_node'] = self._ignore_super_node
         return config 
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
-class SuperReadout(Readout):
-    def __init__(self, **kwargs):
-        kwargs.pop('mode', None)
-        super().__init__(mode='super', **kwargs)
-        warnings.warn(
-            '`molcraft.layers.SuperReadout` is deprecated and will be removed in a future version. '
-            'Use `molcraft.layers.Readout(mode="super")` instead.',
-            category=DeprecationWarning,
-            stacklevel=2
+class SuperReadout(GraphLayer):
+
+    def __init__(self, **kwargs) -> None:
+        kwargs['kernel_initializer'] = None
+        kwargs['bias_initializer'] = None
+        super().__init__(**kwargs)
+
+    def propagate(self, tensor: tensors.GraphTensor) -> tf.Tensor:
+        node_feature = keras.ops.where(
+            tensor.node['super'][:, None], tensor.node['feature'], 0.0
         )
+        return keras.ops.segment_sum(
+            node_feature, tensor.graph_indicator, tensor.num_graphs
+        )
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class AttentiveReadout(GraphLayer):
+
+    """Attentive readout.
+    """
+
+    def __init__(
+        self,
+        intermediate_dim: int | None = None,
+        intermediate_activation: str | keras.layers.Activation | None = 'relu',
+        ignore_super_node: bool = False,
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self._intermediate_dim = intermediate_dim
+        self._intermediate_activation = keras.activations.get(
+            intermediate_activation
+        )
+        self._ignore_super_node = ignore_super_node
+
+    def build(self, spec: tensors.GraphTensor.Spec) -> None:
+        if not self._intermediate_dim:
+            self._intermediate_dim = min(1, spec.node['feature'].shape[-1] // 2)
+        self._intermediate_dense = self.get_dense(
+            self._intermediate_dim, activation=self._intermediate_activation
+        )
+        self._final_dense = self.get_dense(1)
+        self._has_super_node = 'super' in spec.node
+
+    def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
+        score = self._final_dense(self._intermediate_dense(tensor.node['feature']))
+        graph_indicator = tensor.graph_indicator
+        if self._ignore_super_node and self._has_super_node:
+            regular_node = keras.ops.logical_not(tensor.node['super'])
+            score = tf.boolean_mask(score, regular_node)
+            graph_indicator = tf.boolean_mask(graph_indicator, regular_node)
+        weight = ops.graph_softmax(score, graph_indicator, tensor.num_graphs)
+        weighted_node_feature = tensor.node['feature'] * weight
+        return keras.ops.segment_sum(
+            weighted_node_feature, graph_indicator, tensor.num_graphs, sorted=False
+        )
+
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config.update({
+            'intermediate_dim': self._intermediate_dim,
+            'intermediate_activation': keras.activations.serialize(
+                self._intermediate_activation
+            ),
+            'ignore_super_node': self._ignore_super_node,
+        })
+        return config
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
