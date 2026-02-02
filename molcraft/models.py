@@ -252,7 +252,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
             x_val = _make_dataset(x_val, batch_size)
         if isinstance(x, tensors.GraphTensor):
             if val_split:
-                val_size = int(val_split * x.num_subgraphs)
+                val_size = int(val_split * x.num_graphs)
                 x_val = _make_dataset(x[-val_size:], batch_size)
                 x = x[:-val_size]
             x = _make_dataset(x, batch_size, shuffle=kwargs.get('shuffle', True))
@@ -279,6 +279,8 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         batch_size = kwargs.get('batch_size', 32)
         if isinstance(x, tensors.GraphTensor):
             x = _make_dataset(x, batch_size)
+        if isinstance(x, tf.data.Dataset) and tensors.is_scalar(x.element_spec):
+            x = x.batch(batch_size).prefetch(-1)
         metric_results = super().evaluate(x, **kwargs)
         return tf.nest.map_structure(lambda value: float(value), metric_results)
     
@@ -298,6 +300,8 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         batch_size = kwargs.get('batch_size', 32)
         if isinstance(x, tensors.GraphTensor):
             x = _make_dataset(x, batch_size)
+        if isinstance(x, tf.data.Dataset) and tensors.is_scalar(x.element_spec):
+            x = x.batch(batch_size).prefetch(-1)
         output = super().predict(x, **kwargs)
         if tensors.is_graph(output):
             return tensors.from_dict(output).flatten()
