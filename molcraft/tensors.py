@@ -197,15 +197,25 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
         return keras.ops.repeat(keras.ops.arange(num_graphs, dtype=dtype), self.context['size'])
 
     @property
-    def num_subgraphs(self) -> tf.Tensor:
+    def num_graphs(self) -> tf.Tensor:
         dtype = self.context['size'].dtype
         if is_scalar(self):
-            num_subgraphs = tf.constant(1, dtype=dtype)
+            num_graphs = tf.constant(1, dtype=dtype)
         else:
-            num_subgraphs = tf.shape(self.context['size'], out_type=dtype)[0]
+            num_graphs = tf.shape(self.context['size'], out_type=dtype)[0]
         if tf.executing_eagerly():
-            return int(num_subgraphs)
-        return num_subgraphs
+            return int(num_graphs)
+        return num_graphs
+
+    @property
+    def num_subgraphs(self) -> tf.Tensor:
+        warnings.warn(
+            'The `graph.num_subgraphs` property is deprecated and will be removed in a future version. '
+            'Use `graph.num_graphs` instead.',
+            category=DeprecationWarning,
+            stacklevel=2
+        )
+        return self.num_graphs
     
     @property 
     def num_nodes(self):
@@ -278,7 +288,7 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
         graph_indicator_edge = ops.gather(graph_indicator_node, self.edge['source'])
         if force:
             sorted_indices = keras.ops.argsort(graph_indicator_edge)
-        num_subgraphs = self.num_subgraphs
+        num_graphs = self.num_graphs
         unflat_values = {}
         data = to_dict(self)
         for key in tf.type_spec_from_value(self).__dict__:
@@ -287,7 +297,7 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
                 unflat_values[key] = value
             elif key == 'node':
                 unflat_values[key] = tf.nest.map_structure(
-                    lambda x: unflatten_fn(x, graph_indicator_node, num_subgraphs),
+                    lambda x: unflatten_fn(x, graph_indicator_node, num_graphs),
                     value)
                 row_starts = unflat_values[key]['feature'].row_starts()
                 edge_decrement = ops.gather(row_starts, graph_indicator_edge)
@@ -301,7 +311,7 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
                 value['source'] -= edge_decrement
                 value['target'] -= edge_decrement
                 unflat_values[key] = tf.nest.map_structure(
-                    lambda x: unflatten_fn(x, graph_indicator_edge, num_subgraphs),
+                    lambda x: unflatten_fn(x, graph_indicator_edge, num_graphs),
                     value)
         return from_dict(unflat_values)
 
