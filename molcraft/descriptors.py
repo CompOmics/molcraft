@@ -71,7 +71,14 @@ class MolarRefractivity(Descriptor):
     """Crippen molar refractivity."""
     def call(self, mol: chem.Mol) -> np.ndarray:
         return rdMolDescriptors.CalcCrippenDescriptors(mol)[1]
-    
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class AccessibleSurfaceArea(Descriptor):
+    """Labute accessible surface area."""
+    def call(self, mol: chem.Mol) -> np.ndarray:
+        return rdMolDescriptors.CalcLabuteASA(mol)
+
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class NumAtoms(Descriptor):
