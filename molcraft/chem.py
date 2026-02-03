@@ -350,7 +350,10 @@ def get_periodic_table():
 
 def partial_charges(mol: 'Mol') -> list[float]:
     rdPartialCharges.ComputeGasteigerCharges(mol)
-    return [atom.GetDoubleProp("_GasteigerCharge") for atom in mol.atoms]
+    return [
+        atom.GetDoubleProp("_GasteigerCharge") + atom.GetDoubleProp('_GasteigerHCharge')
+        for atom in mol.atoms
+    ]
 
 def logp_contributions(mol: 'Mol') -> list[float]:
     return [i[0] for i in rdMolDescriptors._CalcCrippenContribs(mol)]
