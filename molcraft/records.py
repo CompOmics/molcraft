@@ -3,6 +3,7 @@ import os
 import math
 import glob
 import time
+import json
 import typing 
 import random
 import tensorflow as tf
@@ -58,11 +59,11 @@ def write(
         if num_processes is None and multiprocessing:
             num_processes = mp.cpu_count()
 
+        num_examples = len(inputs)
         if num_files is None:
             num_examples_per_file = 1_000
-            num_files = min(len(inputs), max(1, math.ceil(len(inputs) / num_examples_per_file)))
-            
-        num_examples = len(inputs)
+            num_files = min(num_examples, max(1, math.ceil(num_examples / num_examples_per_file)))
+
         chunk_sizes = [0] * num_files
         for i in range(num_examples):
             chunk_sizes[i % num_files] += 1
@@ -77,38 +78,54 @@ def write(
         
         assert current_index == num_examples
         
-        paths = [
+        filepaths = [
             os.path.join(path, f'tfrecord-{i:06d}.tfrecord')
             for i in range(num_files)
         ]
         
-        if not multiprocessing:
-            for path, input_chunk, start_index in zip(paths, input_chunks, start_indices):
-                _write_tfrecord(input_chunk, path, featurizer, start_index)
-            return
+        tasks = list(zip(filepaths, input_chunks, start_indices))
         
-        processes = []
-        
-        for path, input_chunk, start_index in zip(paths, input_chunks, start_indices):
-        
-            while len(processes) >= num_processes:
+        try:
+            if not multiprocessing:
+                for filepath, input_chunk, start_index in tasks:
+                    _write_tfrecord(input_chunk, filepath, featurizer, start_index)
+                return
+            
+            processes = []
+            while tasks or processes:
+                
+                running_processes = []
                 for process in processes:
-                    if not process.is_alive():
-                        processes.remove(process)
-                else:
-                    time.sleep(0.1)
-                    continue
-                    
-            process = mp.Process(
-                target=_write_tfrecord,
-                args=(input_chunk, path, featurizer, start_index)
-            )
-            processes.append(process)
-            process.start()
+                    if process.is_alive():
+                        running_processes.append(process)
+                    else:
+                        process.join()
+                processes = running_processes
 
-        for process in processes:
-            process.join()         
-    
+                while len(processes) < num_processes and tasks:
+                    filepath, input_chunk, start_index = tasks.pop(0)
+                    process = mp.Process(
+                        target=_write_tfrecord,
+                        args=(input_chunk, filepath, featurizer, start_index)
+                    )
+                    process.start()
+                    processes.append(process)
+
+                time.sleep(0.1)
+                
+        except (Exception, KeyboardInterrupt) as e:
+            if multiprocessing:
+                for process in processes:
+                    if process.is_alive():
+                        process.terminate()
+                        process.join()
+            if os.path.exists(path):
+                _remove_files(path)
+                os.rmdir(path)
+            raise RuntimeError(
+                f"Failed to complete generation of TF records to {path}. Cleaning up {path}..."
+            ) from e
+
 def read(
     path: str, 
     shuffle: bool = False,
