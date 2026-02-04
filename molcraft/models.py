@@ -149,11 +149,18 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         outputs = x
         return cls(inputs=inputs, outputs=outputs, **kwargs)
 
-    def propagate(self, graph: tensors.GraphTensor) -> tensors.GraphTensor:
+    def propagate(
+        self,
+        graph: tensors.GraphTensor,
+        training: bool | None = None
+    ) -> tensors.GraphTensor:
         if self._model_layers is None:
-            return super().propagate(graph)
+            raise NotImplementedError(
+                'The forward pass of the layer is not implemented. '
+                'Please implement `propagate`.'
+            )
         for layer in self._model_layers:
-            graph = layer(graph)
+            graph = layer(graph, training=training)
         return graph
     
     def get_config(self):

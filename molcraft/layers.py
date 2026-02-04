@@ -70,7 +70,7 @@ class GraphLayer(keras.layers.Layer):
         self._kernel_constraint = keras.constraints.get(kernel_constraint)
         self._bias_constraint = keras.constraints.get(bias_constraint)
         self._custom_build_config = {}
-        self._propagate_kwargs = _has_kwargs(self.propagate)
+        self._propagate_kwargs = _has_training_param(self.propagate)
         self.built = False
 
     def __init_subclass__(cls, **kwargs):
@@ -124,13 +124,13 @@ class GraphLayer(keras.layers.Layer):
     def call(
         self, 
         graph: dict[str, dict[str, tf.Tensor]],
-        **kwargs,
+        training: bool | None = None,
     ) -> dict[str, dict[str, tf.Tensor]]:
         graph_tensor = tensors.from_dict(graph)
         if not self._propagate_kwargs:
             outputs = self.propagate(graph_tensor)
         else:
-            outputs = self.propagate(graph_tensor, **kwargs)
+            outputs = self.propagate(graph_tensor, training=training)
         if isinstance(outputs, tensors.GraphTensor):
             return tensors.to_dict(outputs)
         return outputs
@@ -358,9 +358,9 @@ class GraphConv(GraphLayer):
         self._normalize = normalize
         self._skip_connect = skip_connect
         self._activation = keras.activations.get(activation)
-        self._message_kwargs = _has_kwargs(self.message)
-        self._aggregate_kwargs = _has_kwargs(self.aggregate)
-        self._update_kwargs = _has_kwargs(self.update)
+        self._message_kwargs = _has_training_param(self.message)
+        self._aggregate_kwargs = _has_training_param(self.aggregate)
+        self._update_kwargs = _has_training_param(self.update)
 
     @property 
     def units(self):
@@ -409,7 +409,11 @@ class GraphConv(GraphLayer):
             self._update_intermediate_activation = self.activation
             self._update_final_dense = self.get_dense(self.units)
 
-    def propagate(self, tensor: tensors.GraphTensor, **kwargs) -> tensors.GraphTensor:
+    def propagate(
+        self,
+        tensor: tensors.GraphTensor,
+        training: bool | None = None,
+    ) -> tensors.GraphTensor:
         """Forward pass.
 
         Invokes `message(graph)`, `aggregate(graph)` and `update(graph)` in sequence.
@@ -426,7 +430,7 @@ class GraphConv(GraphLayer):
         if not self._message_kwargs:
             message = self.message(tensor)
         else:
-            message = self.message(tensor, **kwargs)
+            message = self.message(tensor, training=training)
         add_message = not isinstance(message, tensors.GraphTensor)
         if add_message:
             message = tensor.update({'edge': {'message': message}})
@@ -436,7 +440,7 @@ class GraphConv(GraphLayer):
         if not self._aggregate_kwargs:
             aggregate = self.aggregate(message)
         else:
-            aggregate = self.aggregate(message, **kwargs)
+            aggregate = self.aggregate(message, training=training)
         add_aggregate = not isinstance(aggregate, tensors.GraphTensor)
         if add_aggregate:
             aggregate = tensor.update({'node': {'aggregate': aggregate}})
@@ -446,7 +450,7 @@ class GraphConv(GraphLayer):
         if not self._update_kwargs:
             update = self.update(aggregate)
         else:
-            update = self.update(aggregate, **kwargs)
+            update = self.update(aggregate, training=training)
         if not isinstance(update, tensors.GraphTensor):
             update = tensor.update({'node': {'feature': update}})
         elif not 'feature' in update.node:
@@ -2104,6 +2108,6 @@ def _spec_from_inputs(inputs):
         return spec
     return tensors.GraphTensor.Spec(**nested_specs)
 
-def _has_kwargs(func) -> bool:
+def _has_training_param(func) -> bool:
     signature = inspect.signature(func)
-    return len(signature.parameters) > 1
+    return 'training' in signature.parameters
