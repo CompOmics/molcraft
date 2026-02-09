@@ -32,16 +32,11 @@ def split(
         random_seed:
             The random state/seed. Only applicable if shuffling.
     """
-    if not isinstance(data, (pd.DataFrame, np.ndarray)):
-        raise ValueError(f'Unsupported `data` type ({type(data)}).')
-
-    if isinstance(groups, str):
-        groups = data[groups].values 
-    elif groups is None:
-        groups = np.arange(len(data))
-    
-    indices = np.unique(groups)
-    size = len(indices)
+    data, groups = _prepare_data(
+        data, groups, shuffle=shuffle, random_seed=random_seed
+    )
+    unique_groups = np.unique(groups)
+    size = len(unique_groups) # num examples or num groups
 
     if not train_size and not test_size:
         raise ValueError(
@@ -50,10 +45,22 @@ def split(
         )
     if isinstance(test_size, float):
         test_size = int(size * test_size)
+        if test_size < 1:
+            raise ValueError(
+                f'`test_size` too small: obtained {test_size} examples.'
+            )
     if isinstance(train_size, float):
         train_size = int(size * train_size)
+        if train_size < 1:
+            raise ValueError(
+                f'`train_size` too small: obtained {train_size} examples.'
+            )
     if isinstance(validation_size, float):
         validation_size = int(size * validation_size)
+        if validation_size < 1:
+            raise ValueError(
+                f'`validation_size` too small: obtained {validation_size} examples.'
+            )
     elif not validation_size:
         validation_size = 0
 
@@ -69,15 +76,11 @@ def split(
         )
     train_size += remainder
 
-    if shuffle:
-        np.random.seed(random_seed)
-        np.random.shuffle(indices)
-
-    train_mask = np.isin(groups, indices[:train_size])
-    test_mask = np.isin(groups, indices[-test_size:])
+    train_mask = np.isin(groups, unique_groups[:train_size])
+    test_mask = np.isin(groups, unique_groups[-test_size:])
     if not validation_size:
         return data[train_mask], data[test_mask]
-    validation_mask = np.isin(groups, indices[train_size:-test_size])
+    validation_mask = np.isin(groups, unique_groups[train_size:-test_size])
     return data[train_mask], data[validation_mask], data[test_mask]
     
 def cv_split(
@@ -103,30 +106,52 @@ def cv_split(
         random_seed:
             The random state/seed. Only applicable if shuffling.
     """
+    data, groups = _prepare_data(
+        data, groups=groups, shuffle=shuffle, random_seed=random_seed
+    )
+    unique_groups = np.unique(groups)
+    num_groups = len(unique_groups)
+    
+    if num_splits > num_groups:
+        raise ValueError(
+            f'`num_splits` ({num_splits}) must not be greater than'
+            f'the data size or the number of groups ({num_groups}).'
+        )
+
+    unique_groups_splits = np.array_split(unique_groups, num_splits)
+
+    for k in range(num_splits):
+        test_groups = unique_groups_splits[k]
+        test_mask = np.isin(groups, test_groups)
+        train_mask = ~test_mask
+        yield data[train_mask], data[test_mask]
+
+def _prepare_data(
+    data: pd.DataFrame | np.ndarray,
+    groups: str | np.ndarray | None = None,
+    shuffle: bool = False,
+    random_seed: int | None = None,
+) -> pd.DataFrame | np.ndarray:
+    
     if not isinstance(data, (pd.DataFrame, np.ndarray)):
         raise ValueError(f'Unsupported `data` type ({type(data)}).')
     
+    if shuffle:
+        if isinstance(data, pd.DataFrame):
+            data = data.sample(
+                frac=1., replace=False, random_state=random_seed
+            )
+        else:
+            np.random.seed(random_seed)
+            np.random.shuffle(data)
+
     if isinstance(groups, str):
         groups = data[groups].values
     elif groups is None:
         groups = np.arange(len(data))
 
-    indices = np.unique(groups)
-    size = len(indices)
-    
-    if num_splits > size:
-        raise ValueError(
-            f'`num_splits` ({num_splits}) must not be greater than'
-            f'the data size or the number of groups ({size}).'
-        )
-    if shuffle:
-        np.random.seed(random_seed)
-        np.random.shuffle(indices)
+    if not isinstance(groups[0], int):
+        to_int = {s: i for (i, s) in enumerate(dict.fromkeys(groups))}
+        groups = [to_int[group] for group in groups]
 
-    indices_splits = np.array_split(indices, num_splits)
-
-    for k in range(num_splits):
-        test_indices = indices_splits[k]
-        test_mask = np.isin(groups, test_indices)
-        train_mask = ~test_mask
-        yield data[train_mask], data[test_mask]
+    return data, groups
