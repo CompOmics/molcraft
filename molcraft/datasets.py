@@ -35,8 +35,8 @@ def split(
     data, groups = _prepare_data(
         data, groups, shuffle=shuffle, random_seed=random_seed
     )
-    indices = np.unique(groups, return_index=True)[1]
-    unique_groups = [groups[i] for i in sorted(indices)]
+    _, groups = np.unique(groups, return_inverse=True)
+    unique_groups = np.unique(groups)
     size = len(unique_groups) # num examples or num groups
 
     if not train_size and not test_size:
@@ -110,10 +110,10 @@ def cv_split(
     data, groups = _prepare_data(
         data, groups=groups, shuffle=shuffle, random_seed=random_seed
     )
-    indices = np.unique(groups, return_index=True)[1]
-    unique_groups = [groups[i] for i in sorted(indices)]
-    num_groups = len(unique_groups) # num examples or num groups
-    
+    _, groups = np.unique(groups, return_inverse=True)
+    unique_groups = np.unique(groups)
+    num_groups = len(unique_groups)
+
     if num_splits > num_groups:
         raise ValueError(
             f'`num_splits` ({num_splits}) must not be greater than'
@@ -152,7 +152,7 @@ def _prepare_data(
     elif groups is None:
         groups = np.arange(len(data))
 
-    if not isinstance(groups[0], int):
+    if not all([isinstance(x, int) for x in groups]):
         to_int = {s: i for (i, s) in enumerate(dict.fromkeys(groups))}
         groups = [to_int[group] for group in groups]
 
