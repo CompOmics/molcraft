@@ -79,8 +79,8 @@ class NodePredictionTrainer(Trainer):
     >>> 
     >>> pretrainer = molcraft.trainers.NodePredictionTrainer(
     ...     model,
-    ...     decoder=None,       # Dense(units=node_label_dim)
-    ...     select_rate=0.5,
+    ...     decoder=None,       # use default decoder
+    ...     select_rate=0.3,
     ...     mask_selected=True,
     ... )
     >>> pretrainer.compile(
@@ -145,43 +145,68 @@ class NodePredictionTrainer(Trainer):
             self._edge_masking_rate = None
 
         if self._decoder is None:
+            feature_dim = spec.node['feature'].shape[-1]
             label_dim = spec.node['label'].shape[-1]
-            self._decoder = keras.layers.Dense(units=label_dim) 
+            self._decoder = keras.Sequential([
+                keras.layers.Dense(units=feature_dim, activation='relu'),
+                keras.layers.Dense(units=feature_dim // 2, activation='relu'),
+                keras.layers.Dense(units=label_dim),
+            ])
 
     def propagate(
         self, 
         tensor: tensors.GraphTensor,
         training: bool | None = None,
     ) -> tensors.GraphTensor:
+
         sample_weight = tensor.node.get('sample_weight')
         if sample_weight is None:
-            sample_weight = keras.ops.ones([tensor.num_nodes])
+            sample_weight = keras.ops.ones(
+                shape=[tensor.num_nodes], dtype=tensor.node['feature'].dtype
+            )
 
         tensor = self._embedder(tensor)
 
-        if self._select_rate is not None and training:
-            # Select nodes to be predicted
-            is_not_super = (
-                True if not self._has_super else keras.ops.logical_not(tensor.node['super'])
+        if self._has_super:
+            sample_weight = keras.ops.where(
+                tensor.node['super'], 0.0, sample_weight
             )
-            r = keras.random.uniform(shape=[tensor.num_nodes])
-            node_mask = keras.ops.logical_and(is_not_super, self._select_rate > r)
-            sample_weight = keras.ops.where(node_mask, sample_weight, 0.0)
+
+        if self._select_rate and training:
+            random_values = keras.random.uniform(shape=[tensor.num_nodes])
+            is_selected = (self._select_rate > random_values)
+            sample_weight = keras.ops.where(is_selected, sample_weight, 0.0)
 
             if self._mask_selected:
-                # Mask selected node features
-                node_feature_masked = keras.ops.where(
-                    node_mask[:, None], self._node_mask_feature, tensor.node['feature']
+                random_values /= self._select_rate
+                mask_node_rate = 0.8
+                random_node_rate = 0.1
+                apply_mask_node_feature = keras.ops.logical_and(
+                    is_selected, random_values < mask_node_rate
                 )
-                tensor = tensor.update({'node': {'feature': node_feature_masked}})
+                apply_random_node_feature = keras.ops.logical_and(
+                    is_selected, keras.ops.logical_and(
+                        random_values >= mask_node_rate, random_values < random_node_rate
+                    )
+                )
+                node_feature = tensor.node['feature']
+                random_node_feature = keras.random.shuffle(node_feature, axis=0)
+                node_feature = keras.ops.where(
+                    apply_mask_node_feature[:, None], self._node_mask_feature, node_feature
+                )
+                node_feature = keras.ops.where(
+                    apply_random_node_feature[:, None], random_node_feature, node_feature
+                )
+                tensor = tensor.update({'node': {'feature': node_feature}})
 
                 if self._edge_masking_rate:
-                    # Mask edge features
                     is_not_super = (
                         True if not self._has_super else keras.ops.logical_not(tensor.edge['super'])
                     )
-                    r = keras.random.uniform(shape=[tensor.num_edges])
-                    edge_mask = keras.ops.logical_and(is_not_super, self._edge_masking_rate > r)
+                    random_values = keras.random.uniform(shape=[tensor.num_edges])
+                    edge_mask = keras.ops.logical_and(
+                        is_not_super, self._edge_masking_rate > random_values
+                    )
                     edge_feature_masked = keras.ops.where(
                         edge_mask[:, None], self._edge_mask_feature, tensor.edge['feature']
                     )
