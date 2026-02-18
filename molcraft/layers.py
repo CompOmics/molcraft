@@ -1990,6 +1990,69 @@ class GaussianParams(keras.layers.Dense):
         return config
     
 
+@keras.saving.register_keras_serializable(package='molcraft')
+class DenseBlock(keras.layers.Dense):
+
+    '''Dense block layer.
+
+    Extends the Dense layer to include dropout, normalization, and skip connection.
+    '''
+
+    def __init__(
+        self,
+        units: int | None = None,
+        activation: str | keras.layers.Activation | None = None,
+        use_bias: bool = False,
+        dropout: float | None = None,
+        normalize: bool | str | None = None,
+        skip_connect: bool = False,
+        **kwargs
+    ) -> None:
+        super().__init__(
+            units=units,
+            activation=None,
+            use_bias=use_bias,
+            **kwargs
+        )
+        self._dropout = dropout or 0.0
+        self._normalize = normalize
+        self._skip_connect = skip_connect
+        self._drop = keras.layers.Dropout(self._dropout)
+        self._activate = keras.activations.get(activation)
+        if not self._normalize:
+            self._norm = keras.layers.Identity()
+        elif str(self._normalize).lower().startswith('layer'):
+            self._norm = keras.layers.LayerNormalization()
+        else:
+            self._norm = keras.layers.BatchNormalization()
+
+    def build(self, input_shape: tf.TensorShape) -> None:
+        if not self.units:
+            self.units = input_shape[-1]
+        elif self._skip_connect and self.units != input_shape[-1]:
+            raise ValueError(
+                'To apply skip connection, `units` need to match input dim.'
+            )
+        super().build(input_shape)
+
+    def call(self, inputs, **kwargs):
+        outputs = super().call(inputs, **kwargs)
+        outputs = self._norm(outputs)
+        outputs = self._activate(outputs)
+        outputs = self._drop(outputs)
+        if self._skip_connect:
+            outputs += inputs
+        return outputs
+
+    def get_config(self):
+        config = super().get_config()
+        config['activation'] = keras.activations.serialize(self._activate)
+        config['dropout'] = self._dropout
+        config['normalize'] = self._normalize
+        config['skip_connect'] = self._skip_connect
+        return config
+
+
 def Input(spec: tensors.GraphTensor.Spec) -> dict:
     """Used to specify inputs to a functional model.
 
