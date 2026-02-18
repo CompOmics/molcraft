@@ -1334,7 +1334,7 @@ class Readout(GraphLayer):
             self._reduce_fn = keras.ops.segment_sum
         elif mode.startswith('max'):
             self._reduce_fn = keras.ops.segment_max 
-        elif mode is None or mode == 'mean' or mode == 'avg' or mode == 'average':
+        elif self.mode is None or mode == 'mean' or mode == 'avg' or mode == 'average':
             self._reduce_fn = ops.segment_mean
         else:
             raise ValueError(
