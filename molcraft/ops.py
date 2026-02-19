@@ -29,6 +29,10 @@ def aggregate(
         return segment_mean(
             node_feature, edge, num_nodes, sorted=False
         )
+    elif mode == 'max':
+        return keras.ops.segment_max(
+            node_feature, edge, num_nodes, sorted=False
+        )
     return keras.ops.segment_sum(
         node_feature, edge, num_nodes, sorted=False
     )
