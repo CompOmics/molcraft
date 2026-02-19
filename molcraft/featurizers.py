@@ -506,6 +506,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
         return super().from_config(config)
 
 
+@keras.saving.register_keras_serializable(package='molcraft')
 class PeptideGraphFeaturizer(MolGraphFeaturizer):
 
     def __init__(
