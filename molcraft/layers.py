@@ -321,6 +321,8 @@ class GraphConv(GraphLayer):
             Whether a normalization layer should be obtain by `get_norm()`. Default to `False`.
         skip_connect (bool):
             Whether node feature input should be added to the node feature output. Default to `True`.
+        dropout_rate (float, None):
+            The dropout rate. Default to `None`.
         kernel_initializer (keras.initializers.Initializer, str):
             Initializer for the kernel weight matrix of the dense layers.
             Default to `glorot_uniform`.
@@ -351,12 +353,16 @@ class GraphConv(GraphLayer):
         use_bias: bool = True,
         normalize: bool = False,
         skip_connect: bool = True,
+        dropout_rate: float | None = None,
         **kwargs
     ) -> None:
         super().__init__(use_bias=use_bias, **kwargs)
         self._units = units
         self._normalize = normalize
         self._skip_connect = skip_connect
+        self._dropout_rate = dropout_rate
+        if self._dropout_rate:
+            self._dropout = keras.layers.Dropout(self._dropout_rate)
         self._activation = keras.activations.get(activation)
         self._message_kwargs = _has_training_param(self.message)
         self._aggregate_kwargs = _has_training_param(self.aggregate)
@@ -376,16 +382,16 @@ class GraphConv(GraphLayer):
                 f'`self.units` needs to be a positive integer. Found: {self.units}.'
             )
         node_feature_dim = spec.node['feature'].shape[-1]
-        self._project_residual = (
+        self._project_identity_shortcut = (
             self._skip_connect and (node_feature_dim != self.units)
         )
-        if self._project_residual:
+        if self._project_identity_shortcut:
             warnings.warn(
                 'Found incompatible dim between input and output. Applying '
-                'a projection layer to residual to match input and output dim.',
+                'a projection layer to identity shortcut to match input and output dim.',
             )
-            self._residual_dense = self.get_dense(
-                self.units, name='residual_dense'
+            self._identity_shortcut_dense = self.get_dense(
+                self.units, name='identity_shortcut_dense'
             )
 
         self.has_edge_feature = 'feature' in spec.edge
@@ -423,9 +429,9 @@ class GraphConv(GraphLayer):
                 A `GraphTensor` instance.
         """
         if self._skip_connect:
-            residual = tensor.node['feature']
-            if self._project_residual:
-                residual = self._residual_dense(residual)
+            identity_shortcut = tensor.node['feature']
+            if self._project_identity_shortcut:
+                identity_shortcut = self._identity_shortcut_dense(identity_shortcut)
 
         if not self._message_kwargs:
             message = self.message(tensor)
@@ -466,13 +472,16 @@ class GraphConv(GraphLayer):
         elif add_aggregate:
             update = update.update({'node': {'aggregate': None}})
 
-        if not self._skip_connect:
+        if not self._skip_connect and not self._dropout_rate:
             return update
         
         feature = update.node['feature']
 
+        if self._dropout_rate:
+            feature = self._dropout(feature)
+
         if self._skip_connect:
-            feature += residual 
+            feature += identity_shortcut
 
         return update.update({'node': {'feature': feature}})
 
@@ -582,6 +591,7 @@ class GraphConv(GraphLayer):
             'activation': keras.activations.serialize(self._activation),
             'normalize': self._normalize,
             'skip_connect': self._skip_connect,
+            'dropout_rate': self._dropout_rate,
         })
         return config
     
@@ -1004,9 +1014,20 @@ class GTConv(GraphConv):
         use_bias: bool = True,
         normalize: bool = False,
         skip_connect: bool = True,
-        attention_dropout: float = 0.0,
+        attention_dropout_rate: float = 0.0,
         **kwargs,
     ) -> None:
+        attention_dropout = kwargs.pop('attention_dropout', None)
+        if attention_dropout:
+            warnings.warn(
+                (
+                    '`attention_dropout` will be deprecated in a future version. '
+                    'Please specify `attention_dropout_rate` instead.'
+                ),
+                category=DeprecationWarning,
+                stacklevel=2
+            )
+            attention_dropout_rate = attention_dropout
         super().__init__(
             units=units, 
             activation=activation,
@@ -1019,7 +1040,7 @@ class GTConv(GraphConv):
         if self.units % self.heads != 0:
             raise ValueError(f"units need to be divisible by heads.")
         self._head_units = self.units // self.heads 
-        self._attention_dropout = attention_dropout
+        self._attention_dropout_rate = attention_dropout_rate
 
     @property 
     def heads(self):
@@ -1042,7 +1063,7 @@ class GTConv(GraphConv):
             'ij,jkh->ikh', (self.head_units, self.heads)
         )
         self._output_dense = self.get_dense(self.units)
-        self._softmax_dropout = keras.layers.Dropout(self._attention_dropout) 
+        self._softmax_dropout = keras.layers.Dropout(self._attention_dropout_rate)
 
         if self.has_edge_feature:
             self._attention_bias_dense_1 = self.get_einsum_dense('ij,jkh->ikh', (1, self.heads))
@@ -1142,7 +1163,7 @@ class GTConv(GraphConv):
         config = super().get_config()
         config.update({
             "heads": self._heads,
-            'attention_dropout': self._attention_dropout,
+            'attention_dropout_rate': self._attention_dropout_rate,
         })
         return config
     
@@ -2003,11 +2024,11 @@ class DenseBlock(keras.layers.Dense):
         units: int | None = None,
         activation: str | keras.layers.Activation | None = None,
         use_bias: bool = False,
-        dropout: float | None = None,
         normalize: bool | str | None = None,
         skip_connect: bool = False,
         normalize_first: bool = False,
         normalize_after_activation: bool = False,
+        dropout_rate: float | None = None,
         **kwargs
     ) -> None:
         super().__init__(
@@ -2016,10 +2037,11 @@ class DenseBlock(keras.layers.Dense):
             use_bias=use_bias,
             **kwargs
         )
-        self._dropout = dropout or 0.0
+        self._dropout_rate = dropout_rate
         self._normalize = normalize
         self._skip_connect = skip_connect
-        self._drop = keras.layers.Dropout(self._dropout)
+        if self._dropout_rate:
+            self._dropout = keras.layers.Dropout(self._dropout_rate)
         self._activate = keras.activations.get(activation)
         self._normalize_first = normalize_first
         self._normalize_after_activation = normalize_after_activation
@@ -2055,7 +2077,8 @@ class DenseBlock(keras.layers.Dense):
         outputs = self._activate(outputs)
         if not self._normalize_first and self._normalize_after_activation:
             outputs = self._norm(outputs)
-        outputs = self._drop(outputs)
+        if self._dropout_rate:
+            outputs = self._dropout(outputs)
         if self._skip_connect:
             outputs += inputs
         return outputs
@@ -2063,11 +2086,11 @@ class DenseBlock(keras.layers.Dense):
     def get_config(self):
         config = super().get_config()
         config['activation'] = keras.activations.serialize(self._activate)
-        config['dropout'] = self._dropout
         config['normalize'] = self._normalize
         config['skip_connect'] = self._skip_connect
         config['normalize_first'] = self._normalize_first
         config['normalize_after_activation'] = self._normalize_after_activation
+        config['dropout_rate'] = self._dropout_rate
         return config
 
 
