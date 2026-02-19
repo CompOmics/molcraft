@@ -27,6 +27,7 @@ class Explainer(models.GraphModel):
             raise ValueError('Could not find `GraphConv` layer(s).')
         self.embedder = models.GraphModel(model.input, layer._symbolic_input)
         self.model = models.GraphModel(layer._symbolic_input, model.output)
+        self._explain_kwargs = layers._has_training_param(self.explain)
 
     def explain(self, graph: tensors.GraphTensor) -> tf.Tensor:
         raise NotImplementedError(
@@ -34,12 +35,19 @@ class Explainer(models.GraphModel):
             'Please implement `explain`.'
         )
 
-    def propagate(self, graph: tensors.GraphTensor) -> tensors.GraphTensor:
+    def propagate(
+        self, 
+        graph: tensors.GraphTensor,
+        training: bool | None = None,
+    ) -> tensors.GraphTensor:
         graph_orig = graph
         if tensors.is_ragged(graph_orig):
             graph = graph_orig.flatten()
-        graph = self.embedder(graph, training=False)
-        saliency = self.explain(graph)
+        graph = self.embedder(graph, training=training)
+        if self._explain_kwargs:
+            saliency = self.explain(graph, training=training)
+        else:
+            saliency = self.explain(graph)
         return graph_orig.update({'node': {'saliency': saliency}})
     
     def get_config(self) -> dict:
@@ -56,10 +64,14 @@ class Explainer(models.GraphModel):
 @keras.saving.register_keras_serializable(package='molcraft')
 class Saliency(Explainer): 
 
-    def explain(self, graph: tensors.GraphTensor) -> tensors.GraphTensor:
+    def explain(
+        self, 
+        graph: tensors.GraphTensor,
+        training: bool | None = None,
+    ) -> tensors.GraphTensor:
         with tf.GradientTape(watch_accessed_variables=False) as tape:
             tape.watch(graph.node['feature'])
-            y_pred = self.model(graph, training=False)
+            y_pred = self.model(graph, training=training)
             target = _target(graph, y_pred)
         saliency = tape.gradient(target, graph.node['feature'])
         return saliency
@@ -77,7 +89,11 @@ class IntegratedSaliency(Explainer):
         super().__init__(model=model, **kwargs)
         self.steps = steps 
 
-    def explain(self, graph: tensors.GraphTensor) -> tensors.GraphTensor:
+    def explain(
+        self, 
+        graph: tensors.GraphTensor,
+        training: bool | None = None,
+    ) -> tensors.GraphTensor:
         original_feature = graph.node['feature']
         baseline = keras.ops.zeros_like(original_feature)
         diff = original_feature - baseline
@@ -98,7 +114,7 @@ class IntegratedSaliency(Explainer):
 
             with tf.GradientTape(watch_accessed_variables=False) as tape:
                 tape.watch(step_feature)
-                y_pred = self.model(step_graph, training=False)
+                y_pred = self.model(step_graph, training=training)
                 target = _target(graph, y_pred)
 
             step_gradient = tape.gradient(target, step_feature)
@@ -120,14 +136,20 @@ class IntegratedSaliency(Explainer):
 @keras.saving.register_keras_serializable(package='molcraft')
 class GradCAM(Explainer):
 
-    def explain(self, graph: tensors.GraphTensor) -> tensors.GraphTensor:
+    def explain(
+        self, 
+        graph: tensors.GraphTensor,
+        training: bool | None = None,
+    ) -> tensors.GraphTensor:
         graph_indicator = graph.graph_indicator
         features = []
         x = graph
         with tf.GradientTape(watch_accessed_variables=False) as tape:
             for layer in self.model.layers:
                 if isinstance(layer, layers.GraphNetwork):
-                    x, taped_features = layer.tape_propagate(x, tape, training=False)
+                    x, taped_features = layer.tape_propagate(
+                        x, tape, training=training
+                    )
                     features.extend(taped_features)
                 else:
                     if (
@@ -136,7 +158,7 @@ class GradCAM(Explainer):
                     ):
                         tape.watch(x.node['feature'])
                         features.append(x.node['feature'])
-                    x = layer(x, training=False)
+                    x = layer(x, training=training)
             y_pred = x
             target = _target(graph, y_pred)
         gradients = tape.gradient(target, features)
