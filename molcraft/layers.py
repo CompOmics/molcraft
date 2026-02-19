@@ -2006,6 +2006,8 @@ class DenseBlock(keras.layers.Dense):
         dropout: float | None = None,
         normalize: bool | str | None = None,
         skip_connect: bool = False,
+        normalize_first: bool = False,
+        normalize_after_activation: bool = False,
         **kwargs
     ) -> None:
         super().__init__(
@@ -2019,6 +2021,15 @@ class DenseBlock(keras.layers.Dense):
         self._skip_connect = skip_connect
         self._drop = keras.layers.Dropout(self._dropout)
         self._activate = keras.activations.get(activation)
+        self._normalize_first = normalize_first
+        self._normalize_after_activation = normalize_after_activation
+        if self._normalize_first and self._normalize_after_activation:
+            warnings.warn(
+                'Both `normalize_first` and `normalize_after_activation` are set to `True`. '
+                'Prioritizing `normalize_first` and ignoring `normalize_after_activation`.'
+            )
+            self._normalize_after_activation = False
+
         if not self._normalize:
             self._norm = keras.layers.Identity()
         elif str(self._normalize).lower().startswith('layer'):
@@ -2036,9 +2047,14 @@ class DenseBlock(keras.layers.Dense):
         super().build(input_shape)
 
     def call(self, inputs, **kwargs):
+        if self._normalize_first:
+            inputs = self._norm(inputs)
         outputs = super().call(inputs, **kwargs)
-        outputs = self._norm(outputs)
+        if not self._normalize_first and not self._normalize_after_activation:
+            outputs = self._norm(outputs)
         outputs = self._activate(outputs)
+        if not self._normalize_first and self._normalize_after_activation:
+            outputs = self._norm(outputs)
         outputs = self._drop(outputs)
         if self._skip_connect:
             outputs += inputs
@@ -2050,6 +2066,8 @@ class DenseBlock(keras.layers.Dense):
         config['dropout'] = self._dropout
         config['normalize'] = self._normalize
         config['skip_connect'] = self._skip_connect
+        config['normalize_first'] = self._normalize_first
+        config['normalize_after_activation'] = self._normalize_after_activation
         return config
 
 
