@@ -2023,7 +2023,7 @@ class DenseBlock(keras.layers.Dense):
         self,
         units: int | None = None,
         activation: str | keras.layers.Activation | None = None,
-        use_bias: bool = False,
+        use_bias: bool = True,
         normalize: bool | str | None = None,
         skip_connect: bool = False,
         normalize_first: bool = False,
