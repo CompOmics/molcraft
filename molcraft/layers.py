@@ -356,6 +356,11 @@ class GraphConv(GraphLayer):
         dropout_rate: float | None = None,
         **kwargs
     ) -> None:
+        heads = kwargs.pop('heads', None)
+        if heads:
+            warnings.warn(
+                f'Ignoring parameter `heads` as it is not supported in {self.__class__.__name__}.'
+            )
         super().__init__(use_bias=use_bias, **kwargs)
         self._units = units
         self._normalize = normalize
@@ -2067,6 +2072,9 @@ class DenseBlock(keras.layers.Dense):
                 'To apply skip connection, `units` need to match input dim.'
             )
         super().build(input_shape)
+        if self._normalize:
+            dim = input_shape[-1] if self._normalize_first else self.units
+            self._norm.build(input_shape=[None, dim])
 
     def call(self, inputs, **kwargs):
         if self._normalize_first:
