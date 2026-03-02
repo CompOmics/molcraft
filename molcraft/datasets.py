@@ -53,6 +53,9 @@ def split(
         )
         group_by = groups 
 
+    if not (0.0 < test_size < 1.0):
+        raise ValueError(f"`test_size` must be between 0 and 1, but got {test_size}")
+    
     _num_splits_test = int(round(1 / test_size))
 
     data_train_val, data_test = next(
@@ -68,6 +71,9 @@ def split(
     if not val_size:
         return data_train_val, data_test 
 
+    if not (0.0 < val_size < 1.0):
+        raise ValueError(f"`val_size` must be between 0 and 1, but got {test_size}")
+    
     _adj_val_ratio = val_size / (1 - test_size)
     _num_splits_val = int(round(1 / _adj_val_ratio))
 
