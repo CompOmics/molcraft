@@ -2,158 +2,151 @@ import warnings
 import numpy as np
 import pandas as pd
 import typing
+from sklearn.model_selection import (
+    KFold, StratifiedKFold, GroupKFold, StratifiedGroupKFold
+)
 
 
 def split(
-    data: pd.DataFrame | np.ndarray,
+    data: pd.DataFrame,
+    test_size: float = 0.2,
+    val_size: float | None = None,
     *,
-    train_size: float | None = None,
-    validation_size: float | None = None, 
-    test_size: float | None = None,
-    groups: str | np.ndarray = None,
-    shuffle: bool = False, 
+    shuffle: bool = True,
     random_seed: int | None = None,
-) -> tuple[np.ndarray | pd.DataFrame, ...]:
-    """Splits the dataset into subsets.
+    group_by: str | None = None,
+    stratify_by: str | None = None,
+    **kwargs,
+) -> tuple[pd.DataFrame, ...]:
+    '''Splits a DataFrame into two (Train/Test) or three (Train/Val/Test) sets.
 
     Args:
         data: 
-            A pd.DataFrame or np.ndarray object.
-        train_size:
-            The size of the train set.
-        validation_size:
-            The size of the validation set.
-        test_size:
-            The size of the test set.
-        groups:
-            The groups to perform the splitting on.
-        shuffle:
-            Whether the dataset should be shuffled prior to splitting.
-        random_seed:
-            The random state/seed. Only applicable if shuffling.
-    """
-    data, groups = _prepare_data(
-        data, groups, shuffle=shuffle, random_seed=random_seed
+            The `pd.DataFrame` to be split.
+        test_size: 
+            The fraction of data to be used for the test set. Default to 0.2.
+            Note: the size of the resulting subset may differ significantly
+            from the expected size specified by `test_size`.
+        val_size: 
+            The fraction of data to be used for the validation set. Default to None.
+            Note: the size of the resulting subset may differ significantly
+            from the expected size specified by `val_size`.
+        shuffle: 
+            Whether to shuffle the data before splitting. 
+        random_seed: 
+            Seed for the random number generator for reproducibility.
+        group_by: 
+            Column name used to ensure the same group does not appear 
+            in both train and test sets.
+        stratify_by: 
+            Column name used to ensure folds maintain roughly the same 
+            class distribution as the original dataset.
+    '''
+    groups = kwargs.pop('groups', None)
+    if groups is not None:
+        warnings.warn(
+            message=(
+                '`groups` argument has been deprecated, please use `group_by` instead.'
+            ),
+            category=DeprecationWarning,
+            stacklevel=2
+        )
+        group_by = groups 
+
+    _num_splits_test = int(round(1 / test_size))
+
+    data_train_val, data_test = next(
+        cv_split(
+            data, 
+            num_splits=_num_splits_test, 
+            shuffle=shuffle, 
+            random_seed=random_seed,
+            group_by=group_by,
+            stratify_by=stratify_by
+        )
     )
-    _, groups = np.unique(groups, return_inverse=True)
-    unique_groups = np.unique(groups)
-    size = len(unique_groups) # num examples or num groups
+    if not val_size:
+        return data_train_val, data_test 
 
-    if not train_size and not test_size:
-        raise ValueError(
-            f'Found both `train_size` and `test_size` to be `None`, '
-            f'specify at least one of them.'
+    _adj_val_ratio = val_size / (1 - test_size)
+    _num_splits_val = int(round(1 / _adj_val_ratio))
+
+    data_train, data_val = next(
+        cv_split(
+            data_train_val, 
+            num_splits=_num_splits_val, 
+            shuffle=False, # already shuffled 
+            random_seed=random_seed,
+            group_by=group_by,
+            stratify_by=stratify_by
         )
-    if isinstance(test_size, float):
-        test_size = int(size * test_size)
-        if test_size < 1:
-            raise ValueError(
-                f'`test_size` too small: obtained {test_size} examples.'
-            )
-    if isinstance(train_size, float):
-        train_size = int(size * train_size)
-        if train_size < 1:
-            raise ValueError(
-                f'`train_size` too small: obtained {train_size} examples.'
-            )
-    if isinstance(validation_size, float):
-        validation_size = int(size * validation_size)
-        if validation_size < 1:
-            raise ValueError(
-                f'`validation_size` too small: obtained {validation_size} examples.'
-            )
-    elif not validation_size:
-        validation_size = 0
+    )
+    return data_train, data_val, data_test 
 
-    if not train_size:
-        train_size = (size - test_size - validation_size)
-    if not test_size:
-        test_size = (size - train_size - validation_size)
-    
-    remainder = size - (train_size + validation_size + test_size)
-    if remainder < 0:
-        raise ValueError(
-            f'subset sizes added up to more than the data size.'
-        )
-    train_size += remainder
-
-    train_mask = np.isin(groups, unique_groups[:train_size])
-    test_mask = np.isin(groups, unique_groups[-test_size:])
-    if not validation_size:
-        return data[train_mask], data[test_mask]
-    validation_mask = np.isin(groups, unique_groups[train_size:-test_size])
-    return data[train_mask], data[validation_mask], data[test_mask]
-    
 def cv_split(
-    data: pd.DataFrame | np.ndarray,
-    num_splits: int = 10,
-    groups: str | np.ndarray = None,
+    data: pd.DataFrame,
+    num_splits: int = 5,
+    *,
     shuffle: bool = False, 
     random_seed: int | None = None,
-) -> typing.Iterator[
-        tuple[np.ndarray | pd.DataFrame, np.ndarray | pd.DataFrame]
-    ]:
-    """Splits the dataset into cross-validation folds.
+    group_by: str | None = None,
+    stratify_by: str | None = None,
+    **kwargs,
+) -> typing.Iterator[tuple[pd.DataFrame, pd.DataFrame]]:
+    '''Splits a DataFrame into cross-validation folds.
 
     Args:
         data: 
-            A pd.DataFrame or np.ndarray object.
-        num_splits:
-            The number of cross-validation folds.
-        groups:
-            The groups to perform the splitting on.
-        shuffle:
-            Whether the dataset should be shuffled prior to splitting.
-        random_seed:
-            The random state/seed. Only applicable if shuffling.
-    """
-    data, groups = _prepare_data(
-        data, groups=groups, shuffle=shuffle, random_seed=random_seed
-    )
-    _, groups = np.unique(groups, return_inverse=True)
-    unique_groups = np.unique(groups)
-    num_groups = len(unique_groups)
-
-    if num_splits > num_groups:
-        raise ValueError(
-            f'`num_splits` ({num_splits}) must not be greater than'
-            f'the data size or the number of groups ({num_groups}).'
+            The `pd.DataFrame` to be split.
+        num_splits: 
+            The number of folds to create. Defaults to 5.
+        shuffle: 
+            Whether to shuffle the data before splitting. 
+        random_seed: 
+            Seed for the random number generator for reproducibility.
+        group_by: 
+            Column name used to ensure the same group does not appear 
+            in both train and test sets.
+        stratify_by: 
+            Column name used to ensure folds maintain roughly the same 
+            class distribution as the original dataset.
+    '''
+    groups = kwargs.pop('groups', None)
+    if groups is not None:
+        warnings.warn(
+            message=(
+                '`groups` argument has been deprecated, '
+                'please use `group_by` instead.'
+            ),
+            category=DeprecationWarning,
+            stacklevel=2
         )
+        group_by = groups 
 
-    unique_groups_splits = np.array_split(unique_groups, num_splits)
-
-    for k in range(num_splits):
-        test_groups = unique_groups_splits[k]
-        test_mask = np.isin(groups, test_groups)
-        train_mask = ~test_mask
-        yield data[train_mask], data[test_mask]
-
-def _prepare_data(
-    data: pd.DataFrame | np.ndarray,
-    groups: str | np.ndarray | None = None,
-    shuffle: bool = False,
-    random_seed: int | None = None,
-) -> pd.DataFrame | np.ndarray:
+    if not isinstance(data, pd.DataFrame):
+        raise ValueError('`splits` only supports `pd.DataFrame` data.')
     
-    if not isinstance(data, (pd.DataFrame, np.ndarray)):
-        raise ValueError(f'Unsupported `data` type ({type(data)}).')
+    if group_by is not None and not isinstance(group_by, str):
+        raise ValueError('`group_by` needs to be `str` or `None`.')
     
+    if stratify_by is not None and not isinstance(stratify_by, str):
+        raise ValueError('`stratify_by` needs to be `str` or `None`.')
+
     if shuffle:
-        if isinstance(data, pd.DataFrame):
-            data = data.sample(
-                frac=1., replace=False, random_state=random_seed
-            )
-        else:
-            np.random.seed(random_seed)
-            np.random.shuffle(data)
+        data = data.sample(frac=1, random_state=random_seed)
 
-    if isinstance(groups, str):
-        groups = data[groups].values
-    elif groups is None:
-        groups = np.arange(len(data))
+    if group_by is not None and stratify_by is not None:
+        kfold = StratifiedGroupKFold(num_splits)
+    elif group_by is not None:
+        kfold = GroupKFold(num_splits)
+    elif stratify_by is not None:
+        kfold = StratifiedKFold(num_splits)
+    else:
+        kfold = KFold(num_splits)
 
-    if not all([isinstance(x, int) for x in groups]):
-        to_int = {s: i for (i, s) in enumerate(dict.fromkeys(groups))}
-        groups = [to_int[group] for group in groups]
-
-    return data, groups
+    X = range(len(data))
+    y = pd.factorize(data[stratify_by])[0] if stratify_by else None
+    groups = pd.factorize(data[group_by])[0] if group_by else None
+    
+    for train_indices, test_indices in kfold.split(X=X, y=y, groups=groups):
+        yield data.iloc[train_indices], data.iloc[test_indices]
