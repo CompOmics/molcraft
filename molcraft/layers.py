@@ -2137,6 +2137,8 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
     elif isinstance(spec, tensors.GraphTensor):
         spec = tf.type_spec_from_value(spec)
 
+    batch_shape = [None] if tensors.is_scalar(spec) else []
+
     inputs = {}
     for outer_field, data in spec.__dict__.items():
         inputs[outer_field] = {}
@@ -2146,7 +2148,7 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
                 # a functional model is strict for what input can be passed.
                 continue
             kwargs = {
-                'shape': nested_spec.shape[1:],
+                'shape': batch_shape + nested_spec.shape[1:],
                 'dtype': nested_spec.dtype,
                 'name': f'{outer_field}_{inner_field}'
             }
