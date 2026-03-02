@@ -265,6 +265,8 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
             x = _make_dataset(x, batch_size, shuffle=kwargs.get('shuffle', True))
         if isinstance(x, tf.data.Dataset) and tensors.is_scalar(x.element_spec):
             x = x.batch(batch_size).prefetch(-1)
+        if isinstance(x_val, tf.data.Dataset) and tensors.is_scalar(x_val.element_spec):
+            x_val = x_val.batch(batch_size).prefetch(-1)
         return super().fit(x, validation_data=x_val, **kwargs)
     
     def evaluate(self, x: tensors.GraphTensor | tf.data.Dataset, **kwargs):
