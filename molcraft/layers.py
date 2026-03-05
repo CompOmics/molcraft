@@ -1777,12 +1777,11 @@ class AddContext(GraphLayer):
             )
 
         if self._categories is not None:
-            self._category_mapping = tf.lookup.StaticHashTable(
-                tf.lookup.KeyValueTensorInitializer(
-                    keys=self._categories, 
-                    values=keras.ops.arange(self._num_categories)
-                ),
-                default_value=-1,
+            self._category_mapping = keras.layers.StringLookup(
+                vocabulary=self._categories,
+                mask_token=None,
+                num_oov_indices=1,
+                output_mode='int'
             )
         else:
             self._category_mapping = None
@@ -1810,7 +1809,7 @@ class AddContext(GraphLayer):
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         context = tensor.context[self._field]
         if self._category_mapping is not None:
-            context = self._category_mapping.lookup(context)
+            context = self._category_mapping(context)
             context = ops.gather(self._category_embedding, context)
         else:
             if self._num_categories:
