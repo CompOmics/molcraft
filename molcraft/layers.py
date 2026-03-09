@@ -2146,12 +2146,11 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
                 # Remove label and sample_weight from the symbolic input as
                 # a functional model is strict for what input can be passed.
                 continue
+            shape, dtype = nested_spec.shape[1:], nested_spec.dtype
             if outer_field == 'context' and scalar_spec:
-                nested_spec = [None] + nested_spec
+                shape = [None] + shape
             kwargs = {
-                'shape': nested_spec.shape[1:],
-                'dtype': nested_spec.dtype,
-                'name': f'{outer_field}_{inner_field}'
+                'shape': shape, 'dtype': dtype, 'name': f'{outer_field}_{inner_field}'
             }
             if isinstance(nested_spec, tf.RaggedTensorSpec):
                 # kwargs['ragged'] = True
