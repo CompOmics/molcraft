@@ -42,6 +42,13 @@ def split(
             Column name used to ensure folds maintain roughly the same 
             class distribution as the original dataset.
     '''
+    warnings.warn(
+        message=(
+            '`split` will soon be removed or changed.'
+        ),
+        category=DeprecationWarning,
+        stacklevel=2
+    )
     groups = kwargs.pop('groups', None)
     if groups is not None:
         warnings.warn(
@@ -117,6 +124,13 @@ def cv_split(
             Column name used to ensure folds maintain roughly the same 
             class distribution as the original dataset.
     '''
+    warnings.warn(
+        message=(
+            '`cv_split` will soon be removed.'
+        ),
+        category=DeprecationWarning,
+        stacklevel=2
+    )
     groups = kwargs.pop('groups', None)
     if groups is not None:
         warnings.warn(
