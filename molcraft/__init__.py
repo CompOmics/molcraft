@@ -13,7 +13,7 @@ from molcraft import ops
 from molcraft import records 
 from molcraft import tensors
 from molcraft import callbacks
-from molcraft import datasets
+from molcraft import utils
 from molcraft import losses
 from molcraft import trainers
 from molcraft import explainers
