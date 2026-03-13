@@ -7,7 +7,7 @@ import numpy as np
 from molcraft import tensors 
 from molcraft import layers 
 from molcraft import models
-
+from molcraft import explainers
 
 class TestModel(unittest.TestCase):
 
@@ -270,13 +270,13 @@ class TestModel(unittest.TestCase):
         for i, tensor in enumerate(self.tensors):
             with self.subTest(i=i, functional=True):
                 model = get_model(tensor)
-                tensor = models.interpret(model, tensor)
-                self.assertTrue('saliency' in tensor.node)
-
-                tensor = tensor.update({'node': {'saliency': None}})
-                tensor = models.saliency(model, tensor)
-                self.assertTrue('feature_saliency' in tensor.node)
-
+                tensor_update = explainers.Saliency(model)(tensor)
+                self.assertTrue('saliency' in tensor_update.node)
+                tensor_update = explainers.IntegratedSaliency(model)(tensor)
+                self.assertTrue('saliency' in tensor_update.node)
+                tensor_update = explainers.GradCAM(model)(tensor)
+                self.assertTrue('saliency' in tensor_update.node)
+                
     def test_embedding(self):
 
         units = 32

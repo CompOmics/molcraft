@@ -54,6 +54,7 @@ def write(
             rng.shuffle(inputs)
             
         example = featurizer._call(inputs[0])
+        example = tensors.from_dict(example)
         save_spec(os.path.join(path, 'spec.pb'), example.spec)
 
         if num_processes is None and multiprocessing:
@@ -192,6 +193,7 @@ def _write_tfrecord(
         for i, x in enumerate(inputs):
             try:
                 tensor = featurizer._call(x)
+                tensor = tensors.from_dict(tensor)
                 serialized = _serialize_example(tensor)
                 writer.write(serialized)
             except Exception as e:

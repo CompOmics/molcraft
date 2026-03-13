@@ -148,7 +148,7 @@ class GraphLayer(keras.layers.Layer):
         if is_graph_tensor:
             graph = tensors.to_dict(graph)
         else:
-            graph = {field: dict(data) for (field, data) in graph.items()}
+            graph = _maybe_create_copy(graph)
 
         if isinstance(self, functional.Functional):
             # As a functional model is strict for what input can be 
@@ -1022,17 +1022,6 @@ class GTConv(GraphConv):
         attention_dropout_rate: float = 0.0,
         **kwargs,
     ) -> None:
-        attention_dropout = kwargs.pop('attention_dropout', None)
-        if attention_dropout:
-            warnings.warn(
-                (
-                    '`attention_dropout` will be deprecated in a future version. '
-                    'Please specify `attention_dropout_rate` instead.'
-                ),
-                category=DeprecationWarning,
-                stacklevel=2
-            )
-            attention_dropout_rate = attention_dropout
         super().__init__(
             units=units, 
             activation=activation,
@@ -2130,9 +2119,11 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
     # `GraphLayer`, to levarage the utility of a `GraphTensor` object. 
 
     if not isinstance(spec, (tensors.GraphTensor, tensors.GraphTensor.Spec)):
-        raise ValueError(
-            f'{spec} not supported as input. Please pass a `GraphTensor.Spec`.'
-        )
+        if not tensors.is_graph(spec):
+            raise ValueError(
+                f'{spec} not supported as input. Please pass a `GraphTensor.Spec`.'
+            )
+        spec = tensors.GraphTensor.Spec(**spec)
     elif isinstance(spec, tensors.GraphTensor):
         spec = tf.type_spec_from_value(spec)
 
@@ -2225,3 +2216,9 @@ def _spec_from_inputs(inputs):
 def _has_training_param(func) -> bool:
     signature = inspect.signature(func)
     return 'training' in signature.parameters
+
+def _maybe_create_copy(graph):
+    is_graph_tensor = isinstance(graph, tensors.GraphTensor)
+    if is_graph_tensor:
+        return graph 
+    return {field: dict(data) for (field, data) in graph.items()}

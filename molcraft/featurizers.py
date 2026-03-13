@@ -62,24 +62,26 @@ class GraphFeaturizer(abc.ABC):
             graph = self.call(inputs, context=context)
         else:
             graph = self.call(inputs)
-        if not isinstance(graph, tensors.GraphTensor):
-            graph = tensors.from_dict(graph)
-        if not tensors.is_scalar(graph):
-            raise ValueError(
-                'The resulting `GraphTensor` output of `call` should be a scalar '
-                '`GraphTensor`. Namely, the `size` (of `context`) should be a rank-0 '
-                'tensor. And furthermore, the remaining `context` data should be unbatched.'
-            )
-        return graph
-
+        _check_call_output(graph)
+        return graph 
+    
     def __call__(
         self,
         inputs: typing.Iterable,
         *,
         multiprocessing: bool = False,
         processes: int | None = None,
-        device: str = '/cpu:0',
+        device: str = None,
+        _return_graph_tensor: bool = True
     ) -> tensors.GraphTensor:
+        if device:
+            warnings.warn(
+                message=(
+                    'The `device` parameter will soon be removed as it is no longer used.'
+                ),
+                category=DeprecationWarning,
+                stacklevel=2,
+            )
         if not isinstance(
             inputs, (list, np.ndarray, pd.Series, pd.DataFrame, typing.Generator)
         ):
@@ -95,15 +97,15 @@ class GraphFeaturizer(abc.ABC):
             inputs = inputs.iterrows()
 
         if not multiprocessing:
-            outputs = [self._call(x) for x in inputs]
+            graphs = [self._call(x) for x in inputs]
         else:
-            with tf.device(device):
-                with mp.Pool(processes) as pool:
-                    outputs = pool.map(func=self._call, iterable=inputs)
-        outputs = [x for x in outputs if x is not None]
-        if tensors.is_scalar(outputs[0]):
-            return tf.stack(outputs, axis=0)
-        return tf.concat(outputs, axis=0)
+            with mp.Pool(processes) as pool:
+                graphs = pool.map(func=self._call, iterable=inputs)
+        graphs = [x for x in graphs if x is not None]
+        global_graph = _py_merge(graphs)
+        if _return_graph_tensor:
+            return tensors.from_dict(global_graph)
+        return global_graph
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
@@ -277,7 +279,7 @@ class MolGraphFeaturizer(GraphFeaturizer):
         if self._super_node:
             data = _add_super_node(data)
 
-        return tensors.GraphTensor(**_convert_dtypes(data))
+        return _convert_dtypes(data)
     
     def get_config(self):
         config = super().get_config()
@@ -479,7 +481,7 @@ class MolGraphFeaturizer3D(MolGraphFeaturizer):
                 [data['node']['coordinate'], conformer.centroid[None]], axis=0
             )
 
-        return tensors.GraphTensor(**_convert_dtypes(data))
+        return _convert_dtypes(data)
     
     @property 
     def random_seed(self) -> int | None:
@@ -542,7 +544,8 @@ class PeptideGraphFeaturizer(MolGraphFeaturizer):
         if self._super_node:
             subgraph_indicator.append(-1)
         graph = super().call(mol, context=context)
-        return graph.update({'node': {'subgraph_indicator': subgraph_indicator}})
+        graph['node']['subgraph_indicator'] = np.asarray(subgraph_indicator, dtype='int32')
+        return graph
 
     def get_config(self) -> dict:
         config = super().get_config()
@@ -713,6 +716,44 @@ def _unpack_inputs(inputs) -> tuple:
     context['index'] = np.asarray(index)
     return mol, context
 
+def _py_merge(graphs: list[dict[str, dict[str, np.ndarray]]]) -> dict[str, dict[str, np.ndarray]]:
+    num_edges = [subgraph['edge']['source'].shape[0] for subgraph in graphs]
+    num_nodes = [subgraph['node']['feature'].shape[0] for subgraph in graphs]
+    incr = np.concatenate([[0], np.cumsum(num_nodes)[:-1]], axis=0)
+    incr = np.repeat(incr, num_edges)
+    global_graph = {'context': {}, 'node': {}, 'edge': {}}
+    for outer_field, data in graphs[0].items():
+        for inner_field, _ in data.items():
+            merge_fn = np.stack if outer_field == 'context' else np.concatenate
+            global_graph[outer_field][inner_field] = merge_fn(
+                [subgraph[outer_field][inner_field] for subgraph in graphs]
+            )
+    global_graph['edge']['source'] = global_graph['edge']['source'] + incr
+    global_graph['edge']['target'] = global_graph['edge']['target'] + incr
+    return global_graph
+
+def _check_call_output(
+    graph: dict[str, dict[str, np.ndarray]]
+) -> None:
+    if not tensors.is_graph(graph):
+        raise ValueError(
+            'The output of `GraphFeaturizer.call` must be a graph.'
+        )
+    is_nest_of_ndarrays = (
+        isinstance(graph, dict) and 
+        isinstance(graph.get('context', {}).get('size', None), np.ndarray)
+    )
+    if not is_nest_of_ndarrays:
+        raise ValueError(
+            'The output of `GraphFeaturizer.call` must be a nested dict of numpy arrays.'
+        )
+    is_scalar = len(graph['context']['size'].shape) == 0
+    if not is_scalar:
+        raise ValueError(
+            'The output of `GraphFeaturizer.call` must be contain a single (unbatched) example '
+            'In other words, the output of `GraphFeaturizer.call` must not be a batch of examples.'
+        )       
+    
 def _get_mol_field(series: pd.Series) -> str:
     for name in series.index:
         if name.lower().strip() in ['smiles', 'inchi', 'sequence']:

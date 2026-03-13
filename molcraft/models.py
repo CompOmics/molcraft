@@ -440,27 +440,30 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         outputs = layer.output
         return keras.models.Model(inputs, outputs, name=f'{self.name}_head')
 
-    def train_step(self, tensor: tensors.GraphTensor) -> dict[str, float]:
+    def train_step(self, graph: tensors.GraphTensor) -> dict[str, float]:
+        graph = layers._maybe_create_copy(graph)
         with tf.GradientTape() as tape:
-            output = self(tensor, training=True)
-            y, y_pred, sample_weight = _get_loss_args(tensor, output)
-            loss = self.compute_loss(tensor, y, y_pred, sample_weight)
+            output = self(graph, training=True)
+            y, y_pred, sample_weight = _get_loss_args(graph, output)
+            loss = self.compute_loss(graph, y, y_pred, sample_weight)
             self._loss_tracker.update_state(loss)
             loss = self.optimizer.scale_loss(loss)
         trainable_weights = self.trainable_weights 
         gradients = tape.gradient(loss, trainable_weights)
         self.optimizer.apply_gradients(zip(gradients, trainable_weights))
-        return self.compute_metrics(tensor, y, y_pred, sample_weight)
-    
-    def test_step(self, tensor: tensors.GraphTensor) -> dict[str, float]:
-        output = self(tensor, training=False)
-        y, y_pred, sample_weight = _get_loss_args(tensor, output)
-        loss = self.compute_loss(tensor, y, y_pred, sample_weight)
+        return self.compute_metrics(graph, y, y_pred, sample_weight)
+
+    def test_step(self, graph: tensors.GraphTensor) -> dict[str, float]:
+        graph = layers._maybe_create_copy(graph)
+        output = self(graph, training=False)
+        y, y_pred, sample_weight = _get_loss_args(graph, output)
+        loss = self.compute_loss(graph, y, y_pred, sample_weight)
         self._loss_tracker.update_state(loss)
-        return self.compute_metrics(tensor, y, y_pred, sample_weight)
+        return self.compute_metrics(graph, y, y_pred, sample_weight)
     
-    def predict_step(self, tensor: tensors.GraphTensor) -> np.ndarray:
-        output = self(tensor, training=False)
+    def predict_step(self, graph: tensors.GraphTensor) -> np.ndarray:
+        graph = layers._maybe_create_copy(graph)
+        output = self(graph, training=False)
         if tensors.is_graph(output):
             if not isinstance(output, tensors.GraphTensor):
                 output = tensors.from_dict(output)
@@ -508,38 +511,6 @@ def save_model(model: GraphModel, filepath: str | Path, *args, **kwargs) -> None
 
 def load_model(filepath: str | Path, inputs=None, *args, **kwargs) -> GraphModel:
     return keras.models.load_model(filepath, *args, **kwargs)
-
-def interpret(
-    model: GraphModel | list[keras.layers.Layer | layers.GraphLayer],
-    graph_tensor: tensors.GraphTensor,
-) -> tensors.GraphTensor:
-    warnings.warn(
-        '`molcraft.models.interpret` is deprecated and will be removed in a future version. '
-        'Use `molcraft.saliency.GradCAM(model).predict(graph_tensor)` instead.',
-        category=DeprecationWarning,
-        stacklevel=2
-    )
-    from molcraft import explainers
-    result = explainers.GradCAM(model)(graph_tensor)
-    return result.update(
-        {'node': {'saliency': keras.ops.mean(result.node['saliency'], axis=-1)}}
-    )
-
-def saliency(
-    model: GraphModel | list[keras.layers.Layer | layers.GraphLayer],
-    graph_tensor: tensors.GraphTensor,
-) -> tensors.GraphTensor:
-    warnings.warn(
-        '`molcraft.models.saliency` is deprecated and will be removed in a future version. '
-        'Use `molcraft.saliency.Saliency(model).predict(graph_tensor)` instead.',
-        category=DeprecationWarning,
-        stacklevel=2
-    )
-    from molcraft import explainers
-    result = explainers.Saliency(model)(graph_tensor)
-    return result.update(
-        {'node': {'feature_saliency': result.node['saliency'], 'saliency': None}}
-    )
 
 def _functional_init_arguments(args, kwargs):
     return (
