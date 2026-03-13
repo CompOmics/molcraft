@@ -207,16 +207,6 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
             return int(num_graphs)
         return num_graphs
 
-    @property
-    def num_subgraphs(self) -> tf.Tensor:
-        warnings.warn(
-            'The `graph.num_subgraphs` property is deprecated and will be removed in a future version. '
-            'Use `graph.num_graphs` instead.',
-            category=DeprecationWarning,
-            stacklevel=2
-        )
-        return self.num_graphs
-    
     @property 
     def num_nodes(self):
         num_nodes = keras.ops.shape(self.node['feature'])[0]
