@@ -82,20 +82,19 @@ class GraphFeaturizer(abc.ABC):
                 category=DeprecationWarning,
                 stacklevel=2,
             )
-        if not isinstance(
-            inputs, (list, np.ndarray, pd.Series, pd.DataFrame, typing.Generator)
-        ):
-            return self._call(inputs)
-        elif isinstance(inputs, pd.Series) and _get_mol_field(inputs):
-            return self._call(inputs)
-        
+        is_scalar = (
+            not isinstance(inputs, (list, np.ndarray, pd.Series, pd.DataFrame, typing.Generator))
+            or isinstance(inputs, pd.Series) and _get_mol_field(inputs)
+        )
+        if is_scalar:
+            graph = self._call(inputs)
+            return tensors.from_dict(graph) if _return_graph_tensor else graph
         if isinstance(inputs, np.ndarray):
             inputs = inputs.tolist()
         elif isinstance(inputs, (pd.Series, pd.DataFrame)):
             if isinstance(inputs, pd.Series):
                 inputs = inputs.to_frame()
             inputs = inputs.iterrows()
-
         if not multiprocessing:
             graphs = [self._call(x) for x in inputs]
         else:
@@ -103,9 +102,7 @@ class GraphFeaturizer(abc.ABC):
                 graphs = pool.map(func=self._call, iterable=inputs)
         graphs = [x for x in graphs if x is not None]
         global_graph = _py_merge(graphs)
-        if _return_graph_tensor:
-            return tensors.from_dict(global_graph)
-        return global_graph
+        return tensors.from_dict(global_graph) if _return_graph_tensor else global_graph
 
 
 @keras.saving.register_keras_serializable(package='molcraft')
