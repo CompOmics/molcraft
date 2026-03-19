@@ -288,6 +288,50 @@ class TestLayer(unittest.TestCase):
                             if not drop_edge_feature:
                                 self.assertTrue(output.edge['feature'].shape[-1] == tensor.edge['feature'].shape[-1])
 
+    def test_gaussian_params_layer(self):
+        batch_size = 4
+        events = 2
+        input_dim = 8
+        x_train = keras.random.normal((batch_size, input_dim))
+
+        layer = layers.GaussianParams(events=events)
+    
+        outputs = layer(x_train)
+        self.assertEqual(outputs.shape, (batch_size, events * 2))
+        
+        _, sigma = keras.ops.split(outputs, 2, axis=-1)
+        self.assertTrue(keras.ops.all(sigma > 0), "Sigma must be positive")
+
+        config = layer.get_config()
+        self.assertEqual(config['events'], events)
+        
+        new_layer = layers.GaussianParams.from_config(config)
+        self.assertEqual(new_layer.events, events)
+        self.assertEqual(new_layer(x_train).shape, outputs.shape)
+
+    def test_normal_inverse_gamma_params_layer(self):
+        batch_size = 4
+        events = 2
+        input_dim = 8
+        x_train = keras.random.normal((batch_size, input_dim))
+
+        layer = layers.NormalInverseGammaParams(events=events)
+        
+        outputs = layer(x_train)
+        self.assertEqual(outputs.shape, (batch_size, events * 4))
+        
+        gamma, v, alpha, beta = keras.ops.split(outputs, 4, axis=-1)
+        self.assertTrue(keras.ops.all(v > 0), "v must be > 0")
+        self.assertTrue(keras.ops.all(alpha >= 1.1), "alpha must be >= 1.1")
+        self.assertTrue(keras.ops.all(beta > 0), "beta must be > 0")
+
+        config = layer.get_config()
+        self.assertIsNone(config.get('units'))
+        
+        new_layer = layers.NormalInverseGammaParams.from_config(config)
+        self.assertEqual(new_layer.events, events)
+        self.assertEqual(new_layer(x_train).shape, outputs.shape)
+
 
 if __name__ == '__main__':
     unittest.main()

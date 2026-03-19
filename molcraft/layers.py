@@ -1971,38 +1971,99 @@ class GaussianParams(keras.layers.Dense):
             per example, then the number of events should be greater than 1. 
             Default to 1.
         kwargs:
-            See `keras.layers.Dense` documentation. `activation` will be applied
-            to `loc` only. `scale` is automatically softplus activated.
+            See `keras.layers.Dense` documentation. `units` and `activation` will be ignored.
     '''
     def __init__(self, events: int = 1, **kwargs):
         units = kwargs.pop('units', None)
         activation = kwargs.pop('activation', None)
+        if activation is not None and activation != 'linear':
+            raise ValueError('`activation` must be `None` or `linear`.')
         if units:
-            if units % 2 != 0:
-                raise ValueError(
-                    '`units` needs to be divisble by 2 as `units` = 2 x `events`.'
-                )
-        else:
-            units = int(events * 2)
-        super().__init__(units=units, **kwargs)
+           raise ValueError(
+               'Please specify `events` instead of `units`. '
+               '`events` = `units // 2`.'
+            )
+        super().__init__(units=(events * 2), **kwargs)
         self.events = events
-        self.loc_activation = keras.activations.get(activation)
 
     def call(self, inputs, **kwargs):
         loc_and_scale = super().call(inputs, **kwargs)
         loc = loc_and_scale[..., :self.events]
         scale = loc_and_scale[..., self.events:]
         scale = keras.ops.softplus(scale) + keras.backend.epsilon()
-        loc = self.loc_activation(loc)
         return keras.ops.concatenate([loc, scale], axis=-1)
 
     def get_config(self):
         config = super().get_config()
         config['events'] = self.events
         config['units'] = None
-        config['activation'] = keras.activations.serialize(self.loc_activation)
         return config
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class NormalInverseGammaParams(keras.layers.Dense):
+
+    '''Normal Inverse-Gamma parameters.
+
+    Computes gamma, v, alpha and beta via a dense layer. Should be implemented 
+    as the last layer in a model and paired with `losses.NormalInverseGammaNLL`.
+
+    The gammal, v, alpha, and beta parameters (resulting from this layer) are 
+    concatenated together along the last axis, resulting in a single output tensor.
+
+    Args:
+        events (int):
+            The number of events. If the model makes a single prediction per example,
+            then the number of events should be 1. If the model makes multiple predictions 
+            per example, then the number of events should be greater than 1.
+            Default to 1.
+        kwargs:
+            See `keras.layers.Dense` documentation. `units` and `activation` will be ignored.
+    '''
+
+    def __init__(self, events: int = 1, **kwargs):
+        units = kwargs.pop('units', None)
+        activation = kwargs.pop('activation', None)
+        if activation is not None and activation != 'linear':
+            raise ValueError('`activation` must be `None` or `linear`.')
+        if units:
+           raise ValueError(
+               'Please specify `events` instead of `units`. '
+               '`events` = `units // 4`.'
+            )
+        super().__init__(units=(events * 4), **kwargs)
+        self.events = events
+
+    def call(self, inputs: tf.Tensor, **kwargs) -> tf.Tensor:
+        outputs = super().call(inputs, **kwargs)
+        mu, log_v, log_alpha, log_beta = keras.ops.split(outputs, 4, axis=-1)
+        v = keras.ops.softplus(log_v) + keras.backend.epsilon()
+        alpha = keras.ops.softplus(log_alpha) + 1.1 
+        beta = keras.ops.softplus(log_beta) + keras.backend.epsilon()
+        return keras.ops.concatenate([mu, v, alpha, beta], axis=-1)
+
+    def get_config(self):
+        config = super().get_config()
+        config['events'] = self.events
+        config['units'] = None
+        return config
+
+    @staticmethod
+    def _aleatoric_uncertainty(alpha, beta) -> tf.Tensor:
+        return beta / (alpha - 1)
+
+    @staticmethod
+    def _epistemic_uncertainty(v, alpha, beta) -> tf.Tensor:
+        return beta / (v * (alpha - 1))
     
+    @staticmethod
+    def process_outputs(outputs: tf.Tensor) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
+        gamma, v, alpha, beta = keras.ops.split(outputs, 4, axis=-1)
+        prediction = gamma
+        aleatoric_uncertainty = NormalInverseGammaParams._aleatoric_uncertainty(alpha, beta)
+        epistemic_uncertainty = NormalInverseGammaParams._epistemic_uncertainty(v, alpha, beta)
+        return prediction, aleatoric_uncertainty, epistemic_uncertainty
+
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class DenseBlock(keras.layers.Dense):

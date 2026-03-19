@@ -7,33 +7,55 @@ import numpy as np
 @keras.saving.register_keras_serializable(package='molcraft')
 class GaussianNegativeLogLikelihood(keras.losses.Loss):
 
+    def __init__(self, name: str = "gaussian_nll", **kwargs) -> None:
+        super().__init__(name=name, **kwargs)
+
+    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        mean, scale = keras.ops.split(y_pred, 2, axis=-1)
+        variance = keras.ops.square(scale)
+        if keras.ops.ndim(y_true) < keras.ops.ndim(mean):
+            y_true = keras.ops.expand_dims(y_true, axis=-1)
+        nll = (
+            0.5 * keras.ops.log(2.0 * np.pi * variance) +
+            0.5 * keras.ops.square(y_true - mean) / variance
+        )
+        return keras.ops.mean(nll, axis=-1)
+
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class NormalInverseGammaNegativeLogLikelihood(keras.losses.Loss):
+
     def __init__(
-        self, 
-        events: int = 1, 
-        name: str = "gaussian_nll", 
+        self,
+        lam: float = 1e-2,
+        name: str = 'normal_inverse_gamma_nll',
         **kwargs
     ) -> None:
         super().__init__(name=name, **kwargs)
-        self.events = events
-    
+        self.lam = lam
+
     def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-        mean = y_pred[..., :self.events]
-        scale = y_pred[..., self.events:]
-        variance = keras.ops.square(scale)
-        expected_rank = len(keras.ops.shape(mean))
-        current_rank = len(keras.ops.shape(y_true))
-        for _ in range(expected_rank - current_rank):
+        gamma, v, alpha, beta = keras.ops.split(y_pred, 4, axis=-1)
+        if keras.ops.ndim(y_true) < keras.ops.ndim(gamma):
             y_true = keras.ops.expand_dims(y_true, axis=-1)
-        return keras.ops.mean(
-            0.5 * keras.ops.log(2.0 * np.pi * variance) + 
-            0.5 * keras.ops.square(y_true - mean) / variance 
+        omega = 2 * beta * (1 + v)
+        nll = (
+            0.5 * tf.math.log(np.pi / v)
+            - alpha * tf.math.log(omega)
+            + (alpha + 0.5) * tf.math.log(v * tf.square(y_true - gamma) + omega)
+            + tf.math.lgamma(alpha)
+            - tf.math.lgamma(alpha + 0.5)
         )
+        error = tf.abs(y_true - gamma)
+        evidence = 2 * v + alpha
+        reg = error * evidence
+        return keras.ops.mean(nll + self.lam * reg, axis=-1)
 
     def get_config(self) -> dict:
         config = super().get_config()
-        config['events'] = self.events 
+        config['lam'] = self.lam
         return config 
-    
+
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class Contrastive(keras.losses.Loss):
@@ -63,3 +85,4 @@ class Contrastive(keras.losses.Loss):
 
 
 GaussianNLL = GaussianNegativeLogLikelihood
+NormalInverseGammaNLL = NormalInverseGammaNegativeLogLikelihood

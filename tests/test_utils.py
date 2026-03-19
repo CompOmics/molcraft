@@ -44,3 +44,7 @@ class TestUtils(unittest.TestCase):
         split1 = list(utils.cv_split(self.df, num_splits=2, shuffle=True, random_seed=seed))
         split2 = list(utils.cv_split(self.df, num_splits=2, shuffle=True, random_seed=seed))
         pd.testing.assert_frame_equal(split1[0][0], split2[0][0])
+
+
+if __name__ == '__main__':
+    unittest.main()
