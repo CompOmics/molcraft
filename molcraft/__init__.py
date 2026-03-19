@@ -17,3 +17,4 @@ from molcraft import utils
 from molcraft import losses
 from molcraft import trainers
 from molcraft import explainers
+from molcraft import datasets
