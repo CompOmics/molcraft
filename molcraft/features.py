@@ -346,7 +346,7 @@ default_vocabulary = {
     'Degree': [
         0, 1, 2, 3, 4, 5, 6, 7, 8
     ],
-    'TotalNumHs': [
+    'NumHydrogens': [
         0, 1, 2, 3, 4
     ],
     'TotalValence': [
