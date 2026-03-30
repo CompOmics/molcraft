@@ -717,7 +717,7 @@ def _py_merge(graphs: list[dict[str, dict[str, np.ndarray]]]) -> dict[str, dict[
     num_edges = [subgraph['edge']['source'].shape[0] for subgraph in graphs]
     num_nodes = [subgraph['node']['feature'].shape[0] for subgraph in graphs]
     incr = np.concatenate([[0], np.cumsum(num_nodes)[:-1]], axis=0)
-    incr = np.repeat(incr, num_edges)
+    incr = np.repeat(incr, num_edges).astype(graphs[0]['edge']['source'].dtype)
     global_graph = {'context': {}, 'node': {}, 'edge': {}}
     for outer_field, data in graphs[0].items():
         for inner_field, _ in data.items():
