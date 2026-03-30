@@ -53,15 +53,10 @@ class PyDataset(keras.utils.PyDataset):
     @property 
     def element_spec(self) -> dict[str, dict[str, tf.TensorSpec]]:
         if not self._element_spec:
-            graph = self.featurizer(self.data.iloc[:1], _return_graph_tensor=False)
-            spec = {}
-            for outer_field, data in graph.items():
-                spec[outer_field] = {}
-                for inner_field, value in data.items():
-                    spec[outer_field][inner_field] = tf.TensorSpec(
-                        shape=(None,) + value.shape[1:], dtype=value.dtype
-                    )
-            self._element_spec = spec
+            self._element_spec = keras.tree.map_structure(
+                lambda x: tf.TensorSpec(shape=(None,) + x.shape[1:], dtype=x.dtype),
+                self.__getitem__(0)
+            )
         return self._element_spec
 
 
