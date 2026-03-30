@@ -12,7 +12,6 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
     def batch(self, spec: 'GraphTensor.Spec', batch_size: int | None):
         """Batches spec.
         """
-
         def batch_field(f):
             if isinstance(f, tf.TensorSpec):
                 return tf.TensorSpec(
@@ -45,7 +44,6 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
     def unbatch(self, spec: 'GraphTensor.Spec'):
         """Unbatches spec.
         """
-
         def unbatch_field(f):   
             if isinstance(f, tf.TensorSpec):
                 return tf.TensorSpec(
@@ -132,9 +130,25 @@ class GraphTensorBatchEncoder(tf.experimental.ExtensionTypeBatchEncoder):
     
 
 class GraphTensor(tf.experimental.BatchableExtensionType):
-    context: typing.Mapping[str, tf.Tensor]
-    node: typing.Mapping[str, typing.Union[tf.Tensor, tf.RaggedTensor]]
-    edge: typing.Mapping[str, typing.Union[tf.Tensor, tf.RaggedTensor]]
+
+    context: typing.Mapping[
+        str, 
+        typing.Union[
+            tf.Tensor, typing.Mapping[str, tf.Tensor]
+        ]
+    ]
+    node: typing.Mapping[
+        str, 
+        typing.Union[
+            tf.Tensor, tf.RaggedTensor, typing.Mapping[str, typing.Union[tf.Tensor, tf.RaggedTensor]]
+        ]
+    ]
+    edge: typing.Mapping[
+        str, 
+        typing.Union[
+            tf.Tensor, tf.RaggedTensor, typing.Mapping[str, typing.Union[tf.Tensor, tf.RaggedTensor]]
+        ]
+    ]
 
     __batch_encoder__ = GraphTensorBatchEncoder()
 
@@ -347,7 +361,9 @@ class GraphTensor(tf.experimental.BatchableExtensionType):
     def __getitem__(self, index):
         if index is None and is_scalar(self):
             return self.__class__(
-                context={key: value[None] for (key, value) in self.context.items()},
+                context=tf.nest.map_structure(
+                    lambda x: x[None], self.context
+                ),
                 node=self.node,
                 edge=self.edge,
             )
@@ -440,7 +456,6 @@ def graph_tensor_concat(
         return value
     return value.unflatten()
 
-# TODO: Clean this up.
 @tf.experimental.dispatch_for_api(tf.stack, {'values': typing.List[GraphTensor]})
 def graph_tensor_stack(
     values: typing.List[GraphTensor],
@@ -465,7 +480,7 @@ def graph_tensor_stack(
         return tf.concat(v, axis=0)
 
     fields = tuple(tf.type_spec_from_value(values[0]).__dict__)
-    num_inner_fields = tuple(len(values[0].__dict__[field]) for field in fields)
+    num_inner_fields = tuple(len(tf.nest.flatten(values[0].__dict__[field])) for field in fields)
     outer_keys = []
     for (f, num_fields) in zip(fields, num_inner_fields):
         outer_keys.extend([f] * num_fields)
@@ -502,12 +517,27 @@ def is_ragged(value_or_spec: GraphTensor | GraphTensor.Spec) -> bool:
 
 def to_dict(tensor: GraphTensor) -> dict:
     spec = tf.type_spec_from_value(tensor)
-    return {key: dict(tensor.__dict__[key]) for key in spec.__dict__}
+    output = {}
+    for key in spec.__dict__:
+        data = tensor.__dict__[key]
+        output[key] = {
+            inner_key: _maybe_convert_to_dict(value) for inner_key, value in data.items()
+        }
+    return output
 
 def from_dict(data: dict) -> GraphTensor:
     data['context']['size'] = keras.ops.cast(data['context']['size'], tf.int32)
     data['edge']['source'] = keras.ops.cast(data['edge']['source'], tf.int32)
     data['edge']['target'] = keras.ops.cast(data['edge']['target'], tf.int32)
+    data['context'] = {
+        key: _maybe_convert_to_dict(value) for key, value in data['context'].items()
+    }
+    data['node'] = {
+        key: _maybe_convert_to_dict(value) for key, value in data['node'].items()
+    }
+    data['edge'] = {
+        key: _maybe_convert_to_dict(value) for key, value in data['edge'].items()
+    }
     return GraphTensor(**data)
 
 def is_graph(data):
@@ -517,45 +547,59 @@ def is_graph(data):
         return True 
     return False
     
+def _maybe_convert_to_dict(x):
+    if isinstance(x, typing.Mapping):
+        return dict(x)
+    return x
+
 def _maybe_convert_new_value(
     new_value: tf.Tensor | tf.RaggedTensor, 
     old_value: tf.Tensor | tf.RaggedTensor | None,
 ) -> tf.Tensor | tf.RaggedTensor:
     if old_value is None:
         return new_value
-    is_old_ragged = isinstance(old_value, tf.RaggedTensor)
-    is_new_ragged = isinstance(new_value, tf.RaggedTensor)
-    if is_old_ragged and not is_new_ragged:
-        new_value = old_value.with_flat_values(new_value)
-    elif not is_old_ragged and is_new_ragged:
-        new_value = new_value.flat_values
-    return new_value
+    def _convert(value):
+        is_old_ragged = isinstance(old_value, tf.RaggedTensor)
+        is_new_ragged = isinstance(value, tf.RaggedTensor)
+        if is_old_ragged and not is_new_ragged:
+            value = old_value.with_flat_values(value)
+        elif not is_old_ragged and is_new_ragged:
+            value = value.flat_values
+        return value
+    return tf.nest.map_structure(_convert, new_value)
 
 def _repr(x: GraphTensor | GraphTensor.Spec):
-    if isinstance(x, GraphTensor):
-        def _trepr(v: tf.Tensor | tf.RaggedTensor):
-            if isinstance(v, tf.Tensor):
-                return f'<tf.Tensor: shape={v.shape.as_list()}, dtype={v.dtype.name}>'
-            return (
-                f'<tf.RaggedTensor: shape={v.shape.as_list()}, ' 
-                f'dtype={v.dtype.name}, ragged_rank={v.ragged_rank}>'
-            )
-    else:
-        def _trepr(v: tf.TensorSpec | tf.RaggedTensorSpec):
-            if isinstance(v, tf.TensorSpec):
-                return f'<tf.TensorSpec: shape={v.shape.as_list()}, dtype={v.dtype.name}>'
-            return (
-                f'<tf.RaggedTensorSpec: shape={v.shape.as_list()}, ' 
-                f'dtype={v.dtype.name}, ragged_rank={v.ragged_rank}>'
-            )
-        
-    context_fields = f',\n        '.join([f'{k!r}: {_trepr(v)}' for k, v in x.context.items()])
-    node_fields = f',\n        '.join([f'{k!r}: {_trepr(v)}'for k, v in x.node.items()])
-    edge_fields = f',\n        '.join([f'{k!r}: {_trepr(v)}' for k, v in x.edge.items()])
+    is_spec = not isinstance(x, GraphTensor)
+    
+    def _format_value(v, depth=1):
+        if isinstance(v, typing.Mapping):
+            if not v:
+                return '{}'
+            base_indent = "    " * depth
+            item_indent = "    " * (depth + 1)
+            items = []
+            for k, val in v.items():
+                formatted_val = _format_value(val, depth + 1)
+                items.append(f"{item_indent}{k!r}: {formatted_val}")
+            return "{\n" + ",\n".join(items) + "\n" + base_indent + "}"
+        try:
+            if is_spec:
+                if isinstance(v, tf.TensorSpec):
+                    return f'<tf.TensorSpec: shape={v.shape.as_list()}, dtype={v.dtype.name}>'
+                if hasattr(v, 'ragged_rank'):
+                    return f'<tf.RaggedTensorSpec: shape={v.shape.as_list()}, dtype={v.dtype.name}, ragged_rank={v.ragged_rank}>'
+            else:
+                if isinstance(v, tf.Tensor):
+                    return f'<tf.Tensor: shape={v.shape.as_list()}, dtype={v.dtype.name}>'
+                if isinstance(v, tf.RaggedTensor):
+                    return f'<tf.RaggedTensor: shape={v.shape.as_list()}, dtype={v.dtype.name}, ragged_rank={v.ragged_rank}>'
+            return repr(v)
+        except (AttributeError, ValueError):
+            return repr(v)
 
-    context_field = 'context={\n        ' + context_fields + '\n    }' 
-    node_field = 'node={\n        ' + node_fields + '\n    }' 
-    edge_field = 'edge={\n        ' + edge_fields + '\n    }' 
+    fields = []
+    for name in ['context', 'node', 'edge']:
+        val = getattr(x, name, {})
+        fields.append(f"    {name}={_format_value(val, depth=1)}")
 
-    fields = ',\n    '.join([context_field, node_field, edge_field])
-    return x.__class__.__name__ + '(\n    ' + fields + '\n)'
+    return f"{x.__class__.__name__}(\n" + ",\n".join(fields) + "\n)"
