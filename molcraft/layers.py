@@ -1705,6 +1705,74 @@ class EdgeEmbedding(GraphLayer):
     
 
 @keras.saving.register_keras_serializable(package='molcraft')
+class DropNode(GraphLayer):
+
+    def __init__(self, rate: float, seed: int = None, **kwargs):
+        super().__init__(**kwargs)
+        self._rate = rate
+        self._seed = seed
+        if self._rate > 0:
+            self.seed_generator = keras.random.SeedGenerator(seed)
+
+    def propagate(self, tensor: tensors.GraphTensor, training: bool = None) -> tensors.GraphTensor:
+        if not training or self._rate <= 0:
+            return tensor 
+
+        n = tensor.num_nodes
+        node_mask = keras.random.uniform(shape=[n], seed=self.seed_generator) > self._rate
+        
+        edge_mask = (
+            keras.ops.take(node_mask, tensor.edge['source']) & 
+            keras.ops.take(node_mask, tensor.edge['target'])
+        )
+        size_updated = keras.ops.bincount(
+            tensor.graph_indicator[node_mask], 
+            minlength=tensor.num_graphs
+        )
+        return tensor.update({
+            'context': {'size': size_updated},
+            'node': {k: v[node_mask] for k, v in tensor.node.items()},
+            'edge': {k: v[edge_mask] for k, v in tensor.edge.items()}
+        })
+
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config.update({
+            'rate': self._rate,
+            'seed': self._seed
+        })
+        return config
+    
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class DropEdge(GraphLayer):
+
+    def __init__(self, rate: float, seed: int = None, **kwargs):
+        super().__init__(**kwargs)
+        self._rate = rate
+        self._seed = seed
+        if self._rate > 0:
+            self.seed_generator = keras.random.SeedGenerator(seed)
+
+    def propagate(self, tensor: tensors.GraphTensor, training: bool = None) -> tensors.GraphTensor:
+        if not training or self._rate <= 0:
+            return tensor 
+        n = tensor.num_edges
+        mask = keras.random.uniform(shape=[n], seed=self.seed_generator) > self._rate 
+        return tensor.update({
+            'edge': {k: v[mask] for (k, v) in tensor.edge.items()}
+        })
+
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config.update({
+            'rate': self._rate,
+            'seed': self._seed
+        })
+        return config
+    
+
+@keras.saving.register_keras_serializable(package='molcraft')
 class AddContext(GraphLayer):
 
     """Context adding layer.
