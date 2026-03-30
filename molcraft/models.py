@@ -565,4 +565,12 @@ def _get_loss_args(
             'Could not find a `prediction` in the `GraphTensor`. Make sure a '
             '`prediction` exists in either the `context`, `node` or `edge`.'
         )
-    return data['label'], prediction, data.get('sample_weight')
+    label = data['label']
+    sample_weight = data.get('sample_weight')
+    if isinstance(label, typing.Mapping):
+        label = dict(label)
+    if isinstance(prediction, typing.Mapping):
+        prediction = dict(prediction)
+    if isinstance(sample_weight, typing.Mapping):
+        sample_weight = dict(sample_weight)
+    return label, prediction, sample_weight
