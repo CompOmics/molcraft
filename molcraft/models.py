@@ -444,7 +444,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         graph = layers._maybe_create_copy(graph)
         with tf.GradientTape() as tape:
             output = self(graph, training=True)
-            y, y_pred, sample_weight = _get_loss_args(graph, output)
+            y, y_pred, sample_weight = _get_loss_args(self.loss, graph, output)
             loss = self.compute_loss(graph, y, y_pred, sample_weight)
             self._loss_tracker.update_state(loss)
             loss = self.optimizer.scale_loss(loss)
@@ -456,7 +456,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
     def test_step(self, graph: tensors.GraphTensor) -> dict[str, float]:
         graph = layers._maybe_create_copy(graph)
         output = self(graph, training=False)
-        y, y_pred, sample_weight = _get_loss_args(graph, output)
+        y, y_pred, sample_weight = _get_loss_args(self.loss, graph, output)
         loss = self.compute_loss(graph, y, y_pred, sample_weight)
         self._loss_tracker.update_state(loss)
         return self.compute_metrics(graph, y, y_pred, sample_weight)
@@ -526,6 +526,7 @@ def _make_dataset(x: tensors.GraphTensor, batch_size: int, shuffle: bool = False
     return ds.batch(batch_size).prefetch(-1)
 
 def _get_loss_args(
+    loss: typing.Any,
     inputs: tensors.GraphTensor,
     outputs: tensors.GraphTensor | tf.Tensor,
 ) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor | None]:
@@ -569,8 +570,14 @@ def _get_loss_args(
     sample_weight = data.get('sample_weight')
     if isinstance(label, typing.Mapping):
         label = dict(label)
+        if isinstance(loss, dict):
+            label = {k: label[k] for k in loss}
     if isinstance(prediction, typing.Mapping):
         prediction = dict(prediction)
+        if isinstance(loss, dict):
+            prediction = {k: prediction[k] for k in loss}
     if isinstance(sample_weight, typing.Mapping):
         sample_weight = dict(sample_weight)
+        if isinstance(loss, dict):
+            sample_weight = {k: sample_weight[k] for k in loss}
     return label, prediction, sample_weight
