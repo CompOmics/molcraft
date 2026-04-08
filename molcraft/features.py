@@ -1,4 +1,5 @@
 import warnings
+import re
 import abc
 import math
 import keras
@@ -78,6 +79,10 @@ class Feature(abc.ABC):
     def name(self) -> str:
         return self.__class__.__name__
     
+    @property
+    def alias(self) -> str:
+        return _snake_case(self.name)
+
     @property 
     def output_dim(self) -> int:
         return 1 if not self.vocab else len(self.vocab)
@@ -328,7 +333,12 @@ class PairDistance(PairFeature):
     def call(self, mol: chem.Mol) -> list[int]:
         return [int(x) for x in chem.get_distances(mol).reshape(-1)]
     
-    
+
+def _snake_case(x: str) -> str:
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', x)
+    return re.sub('([a-z0-0])([A-Z])', r'\1_\2', s1).lower()
+
+
 default_vocabulary = {
     'AtomType': [
         '*', 'H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 'Na', 
