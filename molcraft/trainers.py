@@ -145,13 +145,15 @@ class NodePredictionTrainer(Trainer):
             self._edge_masking_rate = None
 
         if self._decoder is None:
-            feature_dim = spec.node['feature'].shape[-1]
+            latent_dim = self._model._symbolic_output['node']['feature'].shape[-1]
             label_dim = spec.node['label'].shape[-1]
             self._decoder = keras.Sequential([
-                keras.layers.Dense(units=feature_dim, activation='relu'),
-                keras.layers.Dense(units=feature_dim // 2, activation='relu'),
+                keras.layers.Dense(units=latent_dim, activation='relu'),
+                keras.layers.Dense(units=latent_dim // 2, activation='relu'),
                 keras.layers.Dense(units=label_dim),
             ])
+
+        self._is_context_free_decoder = not isinstance(self._decoder, layers.GraphLayer)
 
     def propagate(
         self, 
@@ -212,11 +214,13 @@ class NodePredictionTrainer(Trainer):
                     )
                     tensor = tensor.update({'edge': {'feature': edge_feature_masked}})
 
-        node_feature = self._model(tensor).node['feature']
-        node_prediction = self._decoder(node_feature)
-        return tensor.update({
+        graph = self._model(tensor)
+        latent = (
+            graph.node['feature'] if self._is_context_free_decoder else graph
+        )
+        return graph.update({
             'node': {
-                'prediction': node_prediction, 
+                'prediction': self._decoder(latent),
                 'sample_weight': sample_weight
             }
         })
