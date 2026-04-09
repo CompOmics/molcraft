@@ -67,12 +67,17 @@ class Rollback(keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch: int, logs: dict = None):
         current_loss = logs.get('val_loss', logs.get('loss'))
-        deviation = (current_loss - self._rollback_loss) / self._rollback_loss
 
         if np.isnan(current_loss) or np.isinf(current_loss):
             self._rollback()
             # Rolling back model because of nan or inf loss
             return
+
+        if self._rollback_loss == float('inf'):
+            self._save_state(current_loss)
+            return
+
+        deviation = (current_loss - self._rollback_loss) / self._rollback_loss
 
         if deviation > self.tolerance:
             self._rollback()
@@ -89,12 +94,14 @@ class Rollback(keras.callbacks.Callback):
             self._rollback_optimizer_vars = self._get_optimizer_vars()
 
     def _rollback(self) -> None:
-        self.model.set_weights(self._rollback_weights)
+        for var, saved in zip(self.model.variables, self._rollback_weights):
+            var.assign(saved)
         if self.rollback_optimizer:
-            self.model.optimizer.set_weights(self._rollback_optimizer_vars)
+            for var, saved in zip(self.model.optimizer.variables, self._rollback_optimizer_vars):
+                var.assign(saved)
 
     def _get_optimizer_vars(self):
-        return [v.numpy() for v in self.model.optimizer.variables]
+        return [v.numpy().copy() for v in self.model.optimizer.variables]
 
     def _get_model_vars(self):
-        return self.model.get_weights()
+        return [v.numpy().copy() for v in self.model.variables]

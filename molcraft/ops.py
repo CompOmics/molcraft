@@ -55,7 +55,7 @@ def propagate(
     if edge_feature is not None:
         node_feature_source += edge_feature
         
-    return aggregate(node_feature, edge_target, num_nodes)
+    return aggregate(node_feature_source, edge_target, num_nodes)
 
 @keras.saving.register_keras_serializable(package='molcraft')
 def scatter_update(
@@ -203,7 +203,7 @@ def euclidean_distance(
             keras.ops.square(relative_distance), 
             axis=axis, 
             keepdims=keepdims
-        )
+        ) + keras.backend.epsilon()
     )
 
 @keras.saving.register_keras_serializable(package='molcraft')

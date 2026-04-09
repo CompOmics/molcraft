@@ -160,7 +160,7 @@ class Conformer(Chem.Conformer):
         dtype: str = 'int32'
     ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         radius = radius or np.inf
-        distances = self.distances
+        distances = self.distances.copy()
         if not self_loops:
             np.fill_diagonal(distances, np.inf)
         within_radius = distances < radius
@@ -445,10 +445,10 @@ def embed_conformers(
     for key, value in kwargs.items():
         setattr(embedding_method, key, value)
 
-    if not timeout:
+    if timeout is None:
         timeout = 0 # No timeout
 
-    if not random_seed:
+    if random_seed is None:
         random_seed = -1 # No random seed
 
     embedding_method.randomSeed = random_seed
@@ -541,7 +541,7 @@ def prune_conformers(
         warnings.warn(
             f'{mol} has no conformers to prune. Proceeding without it.'
         )
-        return RDKitMol(mol)
+        return Mol(mol)
     
     threshold = threshold or 0.0
     deviations = conformer_deviations(mol)
@@ -600,7 +600,7 @@ def _mmff_optimize_conformers(
     rdForceFieldHelpers.MMFFSanitizeMolecule(mol)
     results = rdForceFieldHelpers.MMFFOptimizeMoleculeConfs(
         mol,
-        num_threads=num_threads,
+        numThreads=num_threads,
         maxIters=max_iter,
         mmffVariant=variant,
         ignoreInterfragInteractions=ignore_interfragment_interactions,

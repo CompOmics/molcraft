@@ -188,7 +188,7 @@ class NodePredictionTrainer(Trainer):
                 )
                 apply_random_node_feature = keras.ops.logical_and(
                     is_selected, keras.ops.logical_and(
-                        random_values >= mask_node_rate, random_values < random_node_rate
+                        random_values >= mask_node_rate, random_values < (mask_node_rate + random_node_rate)
                     )
                 )
                 node_feature = tensor.node['feature']

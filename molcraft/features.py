@@ -168,10 +168,10 @@ class RingSize(Feature):
         def ring_size(atom):
             if not atom.IsInRing():
                 return -1
-            size = 3
-            while not atom.IsInRingSize(size):
-                size += 1 
-            return size
+            for size in range(3, 101):
+                if atom.IsInRingSize(size):
+                    return size
+            return -1
         return [ring_size(atom) for atom in mol.atoms]
     
 
@@ -336,7 +336,7 @@ class PairDistance(PairFeature):
 
 def _snake_case(x: str) -> str:
     s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', x)
-    return re.sub('([a-z0-0])([A-Z])', r'\1_\2', s1).lower()
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
 
 default_vocabulary = {
@@ -359,7 +359,7 @@ default_vocabulary = {
     'NumHydrogens': [
         0, 1, 2, 3, 4
     ],
-    'TotalValence': [
+    'Valence': [
         0, 1, 2, 3, 4, 5, 6, 7, 8
     ],
     'Hybridization': [

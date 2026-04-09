@@ -607,7 +607,9 @@ def load_featurizer(
             'A `GraphFeaturizer` should be saved as a JSON file.'
         )
     if not filepath.exists():
-        return 
+        raise FileNotFoundError(
+            f'Could not find featurizer file: {filepath}'
+        )
     with open(filepath, 'r') as f:
         config = json.load(f)
     return keras.saving.deserialize_keras_object(config)

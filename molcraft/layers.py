@@ -409,7 +409,7 @@ class GraphConv(GraphLayer):
             self._message_intermediate_activation = self.activation
             self._message_final_dense = self.get_dense(self.units)
 
-        has_overridden_aggregate = self.__class__.message != GraphConv.aggregate
+        has_overridden_aggregate = self.__class__.aggregate != GraphConv.aggregate
         if not has_overridden_aggregate:
             pass
 
@@ -1094,8 +1094,8 @@ class GTConv(GraphConv):
         key = self._key_dense(node_feature)
         value = self._value_dense(node_feature)
 
-        query = ops.gather(query, tensor.edge['source'])
-        key = ops.gather(key, tensor.edge['target'])
+        query = ops.gather(query, tensor.edge['target'])
+        key = ops.gather(key, tensor.edge['source'])
         value = ops.gather(value, tensor.edge['source'])
 
         attention_score = keras.ops.sum(query * key, axis=1, keepdims=True)
@@ -1415,7 +1415,7 @@ class AttentiveReadout(GraphLayer):
 
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
         if not self._intermediate_dim:
-            self._intermediate_dim = min(1, spec.node['feature'].shape[-1] // 2)
+            self._intermediate_dim = max(1, spec.node['feature'].shape[-1] // 2)
         self._intermediate_dense = self.get_dense(
             self._intermediate_dim, activation=self._intermediate_activation
         )
@@ -1425,12 +1425,14 @@ class AttentiveReadout(GraphLayer):
     def propagate(self, tensor: tensors.GraphTensor) -> tensors.GraphTensor:
         score = self._final_dense(self._intermediate_dense(tensor.node['feature']))
         graph_indicator = tensor.graph_indicator
+        node_feature = tensor.node['feature']
         if self._ignore_super_node and self._has_super_node:
             regular_node = keras.ops.logical_not(tensor.node['super'])
             score = tf.boolean_mask(score, regular_node)
             graph_indicator = tf.boolean_mask(graph_indicator, regular_node)
+            node_feature = tf.boolean_mask(node_feature, regular_node)
         weight = ops.graph_softmax(score, graph_indicator, tensor.num_graphs)
-        weighted_node_feature = tensor.node['feature'] * weight
+        weighted_node_feature = node_feature * weight
         return keras.ops.segment_sum(
             weighted_node_feature, graph_indicator, tensor.num_graphs, sorted=False
         )
@@ -1729,10 +1731,16 @@ class DropNode(GraphLayer):
             tensor.graph_indicator[node_mask], 
             minlength=tensor.num_graphs
         )
+        new_indices = keras.ops.cumsum(keras.ops.cast(node_mask, 'int32')) - 1
+        new_source = ops.gather(new_indices, tensor.edge['source'])[edge_mask]
+        new_target = ops.gather(new_indices, tensor.edge['target'])[edge_mask]
+        edge_data = {k: v[edge_mask] for k, v in tensor.edge.items()}
+        edge_data['source'] = new_source
+        edge_data['target'] = new_target
         return tensor.update({
             'context': {'size': size_updated},
             'node': {k: v[node_mask] for k, v in tensor.node.items()},
-            'edge': {k: v[edge_mask] for k, v in tensor.edge.items()}
+            'edge': edge_data
         })
 
     def get_config(self) -> dict:
@@ -1771,6 +1779,64 @@ class DropEdge(GraphLayer):
         })
         return config
     
+
+@keras.saving.register_keras_serializable(package='molcraft')
+class NodeDecoder(GraphLayer):
+    
+    """Node decoder layer.
+    
+    Decodes updated node features to make node predictions.
+    """
+
+    def __init__(
+        self, 
+        prediction: keras.layers.Layer | dict[str, keras.layers.Layer] = None, 
+        backbone: keras.layers.Layer = None, 
+        **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
+        self._prediction = prediction
+        self._backbone = backbone
+        self._latent_dim = None
+
+    def build(self, spec: tensors.GraphTensor.Spec) -> None:
+        if self._backbone is None:
+            self._latent_dim = spec.node['feature'].shape[-1]
+            self._backbone = GraphNetwork([
+                GraphConv(self._latent_dim, **self.get_dense_kwargs(), name='node_decoder_gconv_1'),
+                GraphConv(self._latent_dim, **self.get_dense_kwargs(), name='node_decoder_gconv_2'),
+            ])
+        if self._prediction is None:
+            if not hasattr(spec.node['label'], 'shape'):
+                raise ValueError('For multi-label decoding, please specify `prediction`.')
+            prediction_dim  = spec.node['label'].shape[-1]
+            self._prediction = keras.layers.Dense(prediction_dim)
+            
+    def propagate(self, tensor: tensors.GraphTensor) -> tf.Tensor:
+        if not isinstance(self._backbone, GraphLayer):
+            tensor = tensor.node['feature']
+        x = self._backbone(tensor)
+        if isinstance(self._backbone, GraphNetwork) and self._latent_dim:
+            # Extract only last layer's output
+            x = x.update({'node': {'feature': x.node['feature'][:, -self._latent_dim:]}})
+        if isinstance(x, tensors.GraphTensor):
+            x = x.node['feature']
+        if isinstance(self._prediction, keras.layers.Layer):
+            return self._prediction(x)
+        return {key: pred(x) for key, pred in self._prediction.items()}
+
+    def get_config(self) -> dict:
+        config = super().get_config()
+        config['backbone'] = keras.saving.serialize_keras_object(self._backbone)
+        config['prediction'] = keras.saving.serialize_keras_object(self._prediction)
+        return config
+
+    @classmethod
+    def from_config(cls, config: dict) -> 'NodeDecoder':
+        config['backbone'] = keras.saving.deserialize_keras_object(config['backbone'])
+        config['prediction'] = keras.saving.deserialize_keras_object(config['prediction'])
+        return super().from_config(config)
+
 
 @keras.saving.register_keras_serializable(package='molcraft')
 class AddContext(GraphLayer):

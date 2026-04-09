@@ -40,13 +40,13 @@ class NormalInverseGammaNegativeLogLikelihood(keras.losses.Loss):
             y_true = keras.ops.expand_dims(y_true, axis=-1)
         omega = 2 * beta * (1 + v)
         nll = (
-            0.5 * tf.math.log(np.pi / v)
-            - alpha * tf.math.log(omega)
-            + (alpha + 0.5) * tf.math.log(v * tf.square(y_true - gamma) + omega)
+            0.5 * keras.ops.log(np.pi / v)
+            - alpha * keras.ops.log(omega)
+            + (alpha + 0.5) * keras.ops.log(v * keras.ops.square(y_true - gamma) + omega)
             + tf.math.lgamma(alpha)
             - tf.math.lgamma(alpha + 0.5)
         )
-        error = tf.abs(y_true - gamma)
+        error = keras.ops.abs(y_true - gamma)
         evidence = 2 * v + alpha
         reg = error * evidence
         return keras.ops.mean(nll + self.lam * reg, axis=-1)

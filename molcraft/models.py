@@ -260,8 +260,9 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         if isinstance(x, tensors.GraphTensor):
             if val_split:
                 val_size = int(val_split * x.num_graphs)
-                x_val = _make_dataset(x[-val_size:], batch_size)
-                x = x[:-val_size]
+                if val_size > 0:
+                    x_val = _make_dataset(x[-val_size:], batch_size)
+                    x = x[:-val_size]
             x = _make_dataset(x, batch_size, shuffle=kwargs.get('shuffle', True))
         if isinstance(x, tf.data.Dataset) and tensors.is_scalar(x.element_spec):
             x = x.batch(batch_size).prefetch(-1)
@@ -437,7 +438,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
             raise ValueError(
                 'Could not extract input. `Readout` layer not found.'
             )
-        outputs = layer.output
+        outputs = self.output
         return keras.models.Model(inputs, outputs, name=f'{self.name}_head')
 
     def train_step(self, graph: tensors.GraphTensor) -> dict[str, float]:
