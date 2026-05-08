@@ -66,7 +66,7 @@ def cv_split(
     *,
     shuffle: bool = False, 
     random_seed: int | None = None,
-    group_by: str | None = None,
+    group_by: str | tuple | list | None = None,
     stratify_by: str | None = None,
     **kwargs,
 ) -> typing.Iterator[tuple[pd.DataFrame, pd.DataFrame]]:
@@ -91,8 +91,8 @@ def cv_split(
     if not isinstance(data, pd.DataFrame):
         raise ValueError('`splits` only supports `pd.DataFrame` data.')
     
-    if group_by is not None and not isinstance(group_by, str):
-        raise ValueError('`group_by` needs to be `str` or `None`.')
+    if group_by is not None and not isinstance(group_by, (str, tuple, list)):
+        raise ValueError('`group_by` needs to be `str`, `tuple`, `list` or `None`.')
     
     if stratify_by is not None and not isinstance(stratify_by, str):
         raise ValueError('`stratify_by` needs to be `str` or `None`.')
@@ -111,7 +111,13 @@ def cv_split(
 
     X = range(len(data))
     y = pd.factorize(data[stratify_by])[0] if stratify_by else None
-    groups = pd.factorize(data[group_by])[0] if group_by else None
-    
+
+    if isinstance(group_by, (tuple, list)):
+        groups = pd.factorize(data[group_by].astype(str).agg('-'.join, axis=1))[0]
+    elif isinstance(group_by, str):
+        groups = pd.factorize(data[group_by])[0]
+    else:
+        groups = None
+
     for train_indices, test_indices in kfold.split(X=X, y=y, groups=groups):
         yield data.iloc[train_indices], data.iloc[test_indices]
