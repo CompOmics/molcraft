@@ -229,7 +229,9 @@ class GraphLayer(keras.layers.Layer):
         common_kwargs = self.get_dense_kwargs()
         common_kwargs.update(kwargs)
         use_bias = common_kwargs.pop('use_bias', False)
-        if use_bias and not 'bias_axes' in common_kwargs:
+        if not use_bias:
+            common_kwargs['bias_axes'] = None
+        elif 'bias_axes' not in common_kwargs:
             common_kwargs['bias_axes'] = equation.split('->')[-1][1:] or None
         return keras.layers.EinsumDense(equation, output_shape, **common_kwargs)
     
@@ -354,6 +356,8 @@ class GraphConv(GraphLayer):
         normalize: bool = False,
         skip_connect: bool = True,
         dropout_rate: float | None = None,
+        experts: int | None = None,
+        expert_loss_weight: float = 1e-2,
         **kwargs
     ) -> None:
         heads = kwargs.pop('heads', None)
@@ -368,6 +372,10 @@ class GraphConv(GraphLayer):
         self._dropout_rate = dropout_rate
         if self._dropout_rate:
             self._dropout = keras.layers.Dropout(self._dropout_rate)
+        self._experts = experts
+        if not self._experts or self._experts <= 1:
+            self._experts = None
+        self._expert_loss_weight = expert_loss_weight
         self._activation = keras.activations.get(activation)
         self._message_kwargs = _has_training_param(self.message)
         self._aggregate_kwargs = _has_training_param(self.aggregate)
@@ -415,10 +423,19 @@ class GraphConv(GraphLayer):
 
         has_overridden_update = self.__class__.update != GraphConv.update 
         if not has_overridden_update:
-            self._update_intermediate_dense = self.get_dense(self.units)
             self._update_norm = self.get_norm()
             self._update_intermediate_activation = self.activation
-            self._update_final_dense = self.get_dense(self.units)
+            if not self._experts:
+                self._update_intermediate_dense = self.get_dense(self.units)
+                self._update_final_dense = self.get_dense(self.units)
+            else:
+                self._expert_gate = self.get_dense(self._experts, activation='softmax', use_bias=False)
+                self._update_intermediate_dense = self.get_einsum_dense(
+                    'bi,eio->beo', output_shape=(self._experts, self.units), bias_axes="eo"
+                )
+                self._update_final_dense = self.get_einsum_dense(
+                    'bei,eio->beo', output_shape=(self._experts, self.units), bias_axes="eo"
+                )
 
     def propagate(
         self,
@@ -568,10 +585,32 @@ class GraphConv(GraphLayer):
                 (updated node features).
         """
         aggregate = tensor.node['aggregate']
-        node_feature = self._update_intermediate_dense(aggregate)
-        node_feature = self._update_norm(node_feature)
-        node_feature = self._update_intermediate_activation(node_feature)
-        node_feature = self._update_final_dense(node_feature)
+
+        if not self._experts:
+            node_feature = self._update_intermediate_dense(aggregate)
+            node_feature = self._update_norm(node_feature)
+            node_feature = self._update_intermediate_activation(node_feature)
+            node_feature = self._update_final_dense(node_feature)
+        else:
+            gate_probs = self._expert_gate(aggregate)
+
+            x = self._update_intermediate_dense(aggregate)
+            x = keras.ops.reshape(x, (-1, self._experts * self.units))
+            x = self._update_norm(x)
+            x = keras.ops.reshape(x, (-1, self._experts, self.units))
+            x = self._update_intermediate_activation(x)
+            x = self._update_final_dense(x)
+
+            gate_probs_expanded = keras.ops.expand_dims(gate_probs, axis=-1)
+            node_feature = keras.ops.sum(gate_probs_expanded * x, axis=-2)
+
+            importance = keras.ops.mean(gate_probs, axis=0)
+            loss = (
+                keras.ops.cast(self._experts, importance.dtype) *
+                keras.ops.sum(importance ** 2) - 1.0
+            )
+            self.add_loss(self._expert_loss_weight * loss)
+
         return tensor.update(
             {
                 'node': {
@@ -581,11 +620,14 @@ class GraphConv(GraphLayer):
             }
         )
 
-    def get_norm(self, **kwargs):
+    def get_norm(self, **kwargs) -> keras.layers.Layer:
         if not self._normalize:
             return keras.layers.Identity()
         elif str(self._normalize).lower().startswith('layer'):
-            return keras.layers.LayerNormalization(**kwargs)
+            if not self._experts:
+                return keras.layers.LayerNormalization(**kwargs)
+            else:
+                return keras.layers.GroupNormalization(groups=self._experts, **kwargs)
         else:
             return keras.layers.BatchNormalization(**kwargs)
         
@@ -597,6 +639,8 @@ class GraphConv(GraphLayer):
             'normalize': self._normalize,
             'skip_connect': self._skip_connect,
             'dropout_rate': self._dropout_rate,
+            'experts': self._experts,
+            'expert_loss_weight': self._expert_loss_weight,
         })
         return config
     
