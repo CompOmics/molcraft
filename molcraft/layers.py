@@ -1917,7 +1917,7 @@ class AddContext(GraphLayer):
                     'Automatically converting it to a `list` and sorting it.'
                 )
                 self._categories = sorted(list(self._categories))
-            self._num_categories = len(self._categories)
+            self._num_categories = len(self._categories) + 1
         else:
             self._num_categories = num_categories
 
