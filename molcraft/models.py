@@ -1,5 +1,6 @@
 import warnings
 import typing
+import tempfile
 import keras
 import numpy as np
 import tensorflow as tf
@@ -330,6 +331,27 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
         self.compile(**config)
         if hasattr(self, 'optimizer') and self.built:
             self.optimizer.build(self.trainable_variables)
+
+    def copy(self) -> 'GraphModel':
+        """Creates an exact copy of the model.
+
+        Returns a new model with the same architecture, model weights,
+        and optimizer weights. The model must be built before copying.
+
+        Returns:
+            A new `GraphModel` instance that is an exact copy of this model.
+
+        Raises:
+            ValueError: If the model has not been built yet.
+        """
+        if not self.built:
+            raise ValueError(
+                'Cannot copy model as it has not been built yet.'
+            )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / 'model.keras'
+            self.save(path)
+            return keras.models.load_model(path)
 
     def save(
         self,
