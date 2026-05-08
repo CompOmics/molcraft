@@ -954,6 +954,10 @@ class MPConv(GraphConv):
         skip_connect: bool = True,
         **kwargs
     ) -> None:
+        if 'experts' in kwargs or 'expert_loss_weight' in kwargs:
+            warnings.warn(
+                'MPConv does not support `experts` currently.'
+            )
         super().__init__(
             units=units, 
             activation=activation,
