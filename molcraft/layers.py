@@ -1927,7 +1927,10 @@ class AddContext(GraphLayer):
 
     def build(self, spec: tensors.GraphTensor.Spec) -> None:
 
-        is_str_categorical = not spec.context[self._field].dtype.is_numeric
+        is_str_categorical = not (
+            spec.context[self._field].dtype.is_numeric or
+            spec.context[self._field].dtype.is_bool
+        )
         is_int_categorical = spec.context[self._field].dtype.is_integer
 
         if is_str_categorical and not self._categories:
@@ -1989,6 +1992,7 @@ class AddContext(GraphLayer):
                 context = keras.utils.to_categorical(context, self._num_categories)
             elif len(keras.ops.shape(context)) == 1:
                 context = keras.ops.expand_dims(context, axis=1)
+                context = keras.ops.cast(context, dtype=tensor.node['feature'].dtype)
             context = self._intermediate_dense(context)
         context = self._intermediate_activation(context)
         context = self._intermediate_norm(context)
