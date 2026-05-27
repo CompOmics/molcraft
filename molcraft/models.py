@@ -112,7 +112,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
 
     def __new__(cls, *args, **kwargs):
         if _functional_init_arguments(args, kwargs) and cls == GraphModel:
-            return FunctionalGraphModel(*args, **kwargs)
+            return FunctionalGraphModel.__new__(FunctionalGraphModel)
         return super().__new__(cls)
     
     def __init__(self, *args, **kwargs):
