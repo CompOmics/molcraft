@@ -2370,6 +2370,14 @@ def Input(spec: tensors.GraphTensor.Spec) -> dict:
             raise ValueError(
                 f'{spec} not supported as input. Please pass a `GraphTensor.Spec`.'
             )
+        if not isinstance(spec['context']['size'], tf.TensorSpec):
+            spec = {
+                outer_field: {
+                    inner_field: tf.TensorSpec(**value)
+                    for inner_field, value in data.items()
+                }
+                for outer_field, data in spec.items()
+            }
         spec = tensors.GraphTensor.Spec(**spec)
     elif isinstance(spec, tensors.GraphTensor):
         spec = tf.type_spec_from_value(spec)
