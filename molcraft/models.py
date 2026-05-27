@@ -112,7 +112,7 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
 
     def __new__(cls, *args, **kwargs):
         if _functional_init_arguments(args, kwargs) and cls == GraphModel:
-            return FunctionalGraphModel.__new__(FunctionalGraphModel)
+            return FunctionalGraphModel.__new__(FunctionalGraphModel, *args, **kwargs)
         return super().__new__(cls)
     
     def __init__(self, *args, **kwargs):
@@ -506,6 +506,16 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
 
 @keras.saving.register_keras_serializable(package="molcraft")
 class FunctionalGraphModel(functional.Functional, GraphModel):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._custom_build_config = {}
+        if tensors.is_graph(self.input):
+            spec = layers._spec_from_inputs(self.input)
+            if isinstance(spec, tensors.GraphTensor.Spec):
+                self._custom_build_config['spec'] = (
+                    layers._serialize_spec(spec)
+                )
 
     @property 
     def layers(self):
