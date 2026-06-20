@@ -9,6 +9,7 @@ from keras.src.models import functional
 
 from molcraft import layers
 from molcraft import tensors
+from molcraft import callbacks
 from molcraft import ops
 
 
@@ -269,6 +270,10 @@ class GraphModel(layers.GraphLayer, keras.models.Model):
             x = x.batch(batch_size).prefetch(-1)
         if isinstance(x_val, tf.data.Dataset) and tensors.is_scalar(x_val.element_spec):
             x_val = x_val.batch(batch_size).prefetch(-1)
+        if 'callbacks' in kwargs:
+            for callback in kwargs['callbacks']:
+                if isinstance(callback, callbacks.GlobalProgressBar):
+                    kwargs['verbose'] = 0
         return super().fit(x, validation_data=x_val, **kwargs)
     
     def evaluate(self, x: tensors.GraphTensor | tf.data.Dataset, **kwargs):

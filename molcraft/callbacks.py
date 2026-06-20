@@ -105,3 +105,26 @@ class Rollback(keras.callbacks.Callback):
 
     def _get_model_vars(self):
         return [v.numpy().copy() for v in self.model.variables]
+
+
+class GlobalProgressBar(keras.callbacks.Callback):
+
+    def on_train_begin(self, logs=None):
+        epochs = self.params.get('epochs', 1)
+        steps = self.params.get('steps', None)
+        self.target = (epochs * steps) if steps is not None else None
+        self.progbar = keras.utils.Progbar(target=self.target, unit_name='step')
+        self.global_step = 0
+
+    def on_train_batch_end(self, batch, logs=None):
+        self.global_step += 1
+        metrics = [(k, v) for k, v in (logs or {}).items()]
+        self.progbar.update(self.global_step, values=metrics, finalize=False)
+
+    def on_epoch_end(self, epoch, logs=None):
+        metrics = [(k, v) for k, v in (logs or {}).items()]
+        self.progbar.update(self.global_step, values=metrics, finalize=False)
+
+    def on_train_end(self, logs=None):
+        metrics = [(k, v) for k, v in (logs or {}).items()]
+        self.progbar.update(self.global_step, values=metrics, finalize=True)
