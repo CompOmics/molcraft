@@ -72,6 +72,7 @@ class GraphFeaturizer(abc.ABC):
         multiprocessing: bool = False,
         processes: int | None = None,
         device: str = None,
+        verbose: int | bool = True,
         _return_graph_tensor: bool = True
     ) -> tensors.GraphTensor:
         if device:
@@ -89,6 +90,7 @@ class GraphFeaturizer(abc.ABC):
         if is_scalar:
             graph = self._call(inputs)
             return tensors.from_dict(graph) if _return_graph_tensor else graph
+        size = len(inputs)
         if isinstance(inputs, np.ndarray):
             inputs = inputs.tolist()
         elif isinstance(inputs, (pd.Series, pd.DataFrame)):
@@ -96,7 +98,15 @@ class GraphFeaturizer(abc.ABC):
                 inputs = inputs.to_frame()
             inputs = inputs.iterrows()
         if not multiprocessing:
-            graphs = [self._call(x) for x in inputs]
+            if not verbose:
+                graphs = [self._call(x) for x in inputs]
+            else:
+                progbar = keras.utils.Progbar(target=size, unit_name='molecule')
+                graphs = []
+                for x in inputs:
+                    graph = self._call(x)
+                    graphs.append(graph)
+                    progbar.add(1)
         else:
             with mp.Pool(processes) as pool:
                 graphs = pool.map(func=self._call, iterable=inputs)
@@ -755,7 +765,7 @@ def _check_call_output(
     
 def _get_mol_field(series: pd.Series) -> str:
     for name in series.index:
-        if name.lower().strip() in ['smiles', 'inchi', 'sequence']:
+        if str(name).lower().strip() in ['smiles', 'inchi', 'sequence']:
             return name 
     else:
         return None
