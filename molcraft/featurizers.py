@@ -128,7 +128,7 @@ class GraphFeaturizer(abc.ABC):
                     self._call, ignore_errors=ignore_errors, silence_warnings=silence_warnings
                 )
                 num_processes = processes or mp.cpu_count()
-                chunksize = max(1, size // (num_processes * 32))
+                chunksize = max(1, size // (num_processes * 16))
                 for graph in pool.imap(func=call_func, iterable=inputs, chunksize=chunksize):
                     graphs.append(graph)
                     if verbose:
