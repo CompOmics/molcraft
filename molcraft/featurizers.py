@@ -5,6 +5,7 @@ import json
 import abc
 import re
 import typing 
+import functools
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -56,14 +57,30 @@ class GraphFeaturizer(abc.ABC):
             path=path, **kwargs
         )
 
-    def _call(self, inputs: typing.Any) -> tensors.GraphTensor:
-        inputs, context = _unpack_inputs(inputs)
-        if _call_kwargs(self.call):
-            graph = self.call(inputs, context=context)
-        else:
-            graph = self.call(inputs)
-        _check_call_output(graph)
-        return graph 
+    def _call(
+        self, 
+        inputs: typing.Any, 
+        ignore_errors: bool = False,
+        silence_warnings: bool = False,
+    ) -> tensors.GraphTensor | None:
+        try:
+            inputs, context = _unpack_inputs(inputs)
+            if _call_kwargs(self.call):
+                graph = self.call(inputs, context=context)
+            else:
+                graph = self.call(inputs)
+            _check_call_output(graph)
+            return graph 
+        except Exception as e:
+            if ignore_errors:
+                if not silence_warnings:
+                    warnings.warn(
+                        f"Error encountered during featurization, ignoring and returning None: {e}",
+                        category=UserWarning,
+                        stacklevel=2
+                    )
+                return None
+            raise e
     
     def __call__(
         self,
@@ -71,24 +88,21 @@ class GraphFeaturizer(abc.ABC):
         *,
         multiprocessing: bool = False,
         processes: int | None = None,
-        device: str = None,
         verbose: int | bool = True,
+        ignore_errors: bool = False,
+        silence_warnings: bool = False,
         _return_graph_tensor: bool = True
-    ) -> tensors.GraphTensor:
-        if device:
-            warnings.warn(
-                message=(
-                    'The `device` parameter will soon be removed as it is no longer used.'
-                ),
-                category=DeprecationWarning,
-                stacklevel=2,
-            )
+    ) -> tensors.GraphTensor | None:
         is_scalar = (
             not isinstance(inputs, (list, np.ndarray, pd.Series, pd.DataFrame, typing.Generator))
             or isinstance(inputs, pd.Series) and _get_mol_field(inputs)
         )
         if is_scalar:
-            graph = self._call(inputs)
+            graph = self._call(
+                inputs, ignore_errors=ignore_errors, silence_warnings=silence_warnings
+            )
+            if graph is None:
+                return None
             return tensors.from_dict(graph) if _return_graph_tensor else graph
         size = len(inputs)
         if isinstance(inputs, np.ndarray):
@@ -98,19 +112,25 @@ class GraphFeaturizer(abc.ABC):
                 inputs = inputs.to_frame()
             inputs = inputs.iterrows()
         if not multiprocessing:
-            if not verbose:
-                graphs = [self._call(x) for x in inputs]
-            else:
+            if verbose:
                 progbar = keras.utils.Progbar(target=size, unit_name='molecule')
-                graphs = []
-                for x in inputs:
-                    graph = self._call(x)
-                    graphs.append(graph)
+            graphs = []
+            for x in inputs:
+                graph = self._call(
+                    x, ignore_errors=ignore_errors, silence_warnings=silence_warnings
+                )
+                graphs.append(graph)
+                if verbose:
                     progbar.add(1)
         else:
             with mp.Pool(processes) as pool:
-                graphs = pool.map(func=self._call, iterable=inputs)
+                call_func = functools.partial(
+                    self._call, ignore_errors=ignore_errors, silence_warnings=silence_warnings
+                )
+                graphs = pool.map(func=call_func, iterable=inputs)
         graphs = [x for x in graphs if x is not None]
+        if not graphs:
+            return None
         global_graph = _py_merge(graphs)
         return tensors.from_dict(global_graph) if _return_graph_tensor else global_graph
 
