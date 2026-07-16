@@ -111,10 +111,10 @@ class GraphFeaturizer(abc.ABC):
             if isinstance(inputs, pd.Series):
                 inputs = inputs.to_frame()
             inputs = inputs.iterrows()
+        if verbose:
+            progbar = keras.utils.Progbar(target=size, unit_name='example')
+        graphs = []
         if not multiprocessing:
-            if verbose:
-                progbar = keras.utils.Progbar(target=size, unit_name='molecule')
-            graphs = []
             for x in inputs:
                 graph = self._call(
                     x, ignore_errors=ignore_errors, silence_warnings=silence_warnings
@@ -127,7 +127,12 @@ class GraphFeaturizer(abc.ABC):
                 call_func = functools.partial(
                     self._call, ignore_errors=ignore_errors, silence_warnings=silence_warnings
                 )
-                graphs = pool.map(func=call_func, iterable=inputs)
+                num_processes = processes or mp.cpu_count()
+                chunksize = max(1, size // (num_processes * 32))
+                for graph in pool.imap(func=call_func, iterable=inputs, chunksize=chunksize):
+                    graphs.append(graph)
+                    if verbose:
+                        progbar.add(1)
         graphs = [x for x in graphs if x is not None]
         if not graphs:
             return None
